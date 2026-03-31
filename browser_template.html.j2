@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATIF Replay · {{ page_title }}</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/json.min.js"></script>
+<style>
+{{ browser_css | safe }}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand-lockup">
+    <div class="brand">ATIF Replay</div>
+    <div class="brand-subtitle">Portable conversation replay</div>
+  </div>
+  <div class="session-meta" id="session-meta">
+    <span data-slot="empty">no trajectory loaded</span>
+    <span data-slot="loaded" hidden>
+      <span class="session-meta-key">session</span>
+      <em data-slot="session-id"></em>
+      <span class="session-meta-separator">·</span>
+      <span class="session-meta-key">agent</span>
+      <em data-slot="agent-name"></em>
+      <span class="session-meta-separator">·</span>
+      <em data-slot="step-count"></em>
+    </span>
+  </div>
+  <div class="controls">
+    <input id="file-input" type="file" accept=".json,.atif,.txt,application/json">
+    <button id="btn-open" class="ctrl-btn" title="Open a local trajectory file">Open File</button>
+    <input id="filter-input" type="text" placeholder="Filter chain…" autocomplete="off">
+    <button id="btn-collapse-all" class="ctrl-btn" title="Collapse or expand all nodes">Fold All</button>
+    <button id="btn-reasoning" class="ctrl-btn" title="Toggle reasoning blocks">Show Reasoning</button>
+    <button id="btn-metrics" class="ctrl-btn on" title="Toggle metrics and analytics">Hide Metrics</button>
+    <button id="btn-raw" class="ctrl-btn" title="View raw ATIF JSON">Raw JSON</button>
+  </div>
+</header>
+<div id="app">
+  <main id="conversation"></main>
+  <aside id="sidebar"><div id="sidebar-content"></div></aside>
+</div>
+<div id="raw-modal">
+  <div id="raw-pane">
+    <div id="raw-pane-header">
+      <span id="raw-pane-title">Raw ATIF JSON</span>
+      <button id="close-raw" title="Close">&times;</button>
+    </div>
+    <pre id="raw-content"></pre>
+  </div>
+</div>
+<template id="tpl-inline-error">
+  <div class="inline-error" data-slot="message"></div>
+</template>
+<template id="tpl-empty-state">
+  <div class="empty-state">
+    <strong data-slot="title"></strong>
+    <p data-slot="message"></p>
+    <p data-slot="extra">You can use the <strong>Open File</strong> button above or drag a JSON file onto this pane. No upload happens; the file stays local in your browser.</p>
+    <div class="empty-actions">
+      <button class="ctrl-btn on" data-action="open-file">Open File</button>
+    </div>
+  </div>
+</template>
+<template id="tpl-step-node">
+  <article class="step-node">
+    <div class="node-shell">
+      <div class="node-header">
+        <div class="node-title">
+          <span class="node-step" data-slot="step"></span>
+          <span class="node-role" data-slot="role"></span>
+          <span class="node-preview" data-slot="preview"></span>
+          <span class="node-timestamp" data-slot="timestamp" hidden></span>
+        </div>
+        <div class="node-actions">
+          <button class="node-action" data-action="toggle-step" data-slot="toggle"></button>
+          <button class="node-action" data-action="link-step" data-slot="link">Link</button>
+        </div>
+      </div>
+      <div class="node-body" data-slot="body"></div>
+    </div>
+  </article>
+</template>
+<template id="tpl-event-empty">
+  <section class="event-block">
+    <div class="event-body">No renderable events in this step.</div>
+  </section>
+</template>
+<template id="tpl-event-message">
+  <section class="event-block message">
+    <div class="event-heading"><span class="event-label">message</span></div>
+    <div class="event-body" data-slot="body"></div>
+  </section>
+</template>
+<template id="tpl-event-reasoning">
+  <section class="event-block reasoning">
+    <div class="event-heading"><span class="event-label">◆ reasoning</span></div>
+    <div class="event-body" data-slot="body"></div>
+  </section>
+</template>
+<template id="tpl-event-tool-call">
+  <section class="event-block tool-call">
+    <div class="event-heading">
+      <span class="event-label">tool call</span>
+      <span class="event-ref" data-slot="ref" hidden></span>
+    </div>
+    <div class="event-summary-line">
+      <span class="symbol-tool">▶</span>
+      <span>tool:</span>
+      <span class="tool-name" data-slot="title"></span>
+      <span class="tool-paren">(…)</span>
+    </div>
+  </section>
+</template>
+<template id="tpl-event-tool-result">
+  <section class="event-block tool-result">
+    <div class="event-heading">
+      <span class="event-label">tool result</span>
+      <span class="event-ref" data-slot="ref" hidden></span>
+    </div>
+    <div class="event-summary-line">
+      <span class="symbol-result">◀</span>
+      <span>result</span>
+    </div>
+  </section>
+</template>
+<template id="tpl-event-metrics">
+  <section class="event-block metrics">
+    <span class="event-label">⬡ metrics</span>
+  </section>
+</template>
+<template id="tpl-json-detail">
+  <details class="json-detail">
+    <summary data-slot="summary"></summary>
+    <div data-slot="content"></div>
+  </details>
+</template>
+<template id="tpl-node-json">
+  <details class="node-json">
+    <summary data-slot="summary"></summary>
+    <div data-slot="content"></div>
+  </details>
+</template>
+<template id="tpl-sidebar-placeholder">
+  <section class="sidebar-panel">
+    <div class="sidebar-panel-head">
+      <div class="sidebar-eyebrow" data-slot="eyebrow"></div>
+      <h2 class="sidebar-title" data-slot="title"></h2>
+      <p class="sidebar-copy" data-slot="copy" hidden></p>
+    </div>
+  </section>
+</template>
+<template id="tpl-analytics-panel">
+  <section class="sidebar-panel analytics-panel">
+    <div class="sidebar-panel-head">
+      <div class="sidebar-eyebrow">Analytics</div>
+      <h2 class="sidebar-title">Conversation metrics</h2>
+      <div class="analytics-subtitle" data-slot="subtitle"></div>
+    </div>
+    <div class="analytics-body">
+      <div class="analytics-summary" data-slot="summary"></div>
+      <div class="analytics-sections" data-slot="sections"></div>
+    </div>
+  </section>
+</template>
+<template id="tpl-analytics-summary-row">
+  <div class="analytics-summary-row">
+    <div class="analytics-summary-main">
+      <div class="analytics-summary-label" data-slot="label"></div>
+      <div class="analytics-summary-meta" data-slot="meta" hidden></div>
+    </div>
+    <div class="analytics-summary-value" data-slot="value"></div>
+  </div>
+</template>
+<template id="tpl-analytics-section">
+  <section class="analytics-section">
+    <h3 data-slot="title"></h3>
+    <div class="analytics-list" data-slot="list"></div>
+  </section>
+</template>
+<template id="tpl-analytics-row">
+  <div class="analytics-row">
+    <div class="analytics-row-main">
+      <div class="analytics-row-label">
+        <strong data-slot="primary"></strong>
+        <span data-slot="secondary"></span>
+      </div>
+      <div class="analytics-bar" data-slot="bar" hidden>
+        <div class="analytics-bar-fill" data-slot="bar-fill"></div>
+      </div>
+    </div>
+    <div class="analytics-row-value" data-slot="value"></div>
+  </div>
+</template>
+<template id="tpl-analytics-empty">
+  <div class="analytics-empty" data-slot="message"></div>
+</template>
+<script>
+/* Data injected by Python — do not edit the constants below by hand. */
+const INITIAL_EVENTS = {{ initial_events_json | safe }};
+const INITIAL_RAW_DOC = {{ initial_raw_doc_json | safe }};
+
+{{ browser_js | safe }}
+</script>
+</body>
+</html>
