@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 
+_ATTACHMENTS_BLOCK_RE = re.compile(r"<attachments>.*?</attachments>", re.DOTALL | re.IGNORECASE)
+_ATTACHMENT_RE = re.compile(r"<attachment\b[^>]*>.*?</attachment>", re.DOTALL | re.IGNORECASE)
+_USER_REQUEST_RE = re.compile(r"<userRequest>\s*(.*?)\s*</userRequest>", re.DOTALL | re.IGNORECASE)
+
+
 # ---------------------------------------------------------------------------
 # Public data model
 # ---------------------------------------------------------------------------
@@ -41,6 +46,56 @@ class Event:
     ref:     Optional[str]
 
 
+@dataclass(frozen=True)
+class ToolCall:
+    """
+    Parsed tool call with normalized field access.
+    Supports dual naming conventions: id/tool_call_id, name/function_name.
+    """
+    call_id:   str
+    name:      str
+    arguments: dict[str, Any]
+    timestamp: Optional[str]
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    """
+    Parsed tool result with normalized field access.
+    Supports dual field names: source_call_id/ref.
+    """
+    source_call_id: Optional[str]
+    content:        Any
+    timestamp:      Optional[str]
+
+
+# ---------------------------------------------------------------------------
+# Data model utilities
+# ---------------------------------------------------------------------------
+
+def parse_tool_call(raw: dict) -> ToolCall:
+    """
+    Extract a ToolCall from a raw dict with flexible field names.
+    Supports: id/tool_call_id, name/function_name.
+    """
+    call_id = raw.get("id") or raw.get("tool_call_id") or "unknown"
+    name = raw.get("name") or raw.get("function_name") or "unknown"
+    arguments = _decode_args(raw.get("arguments", {}))
+    timestamp = raw.get("timestamp")
+    return ToolCall(call_id=call_id, name=name, arguments=arguments, timestamp=timestamp)
+
+
+def parse_tool_result(raw: dict) -> ToolResult:
+    """
+    Extract a ToolResult from a raw dict with flexible field names.
+    Supports: source_call_id/ref.
+    """
+    source_call_id = raw.get("source_call_id") or raw.get("ref")
+    content = raw.get("content")
+    timestamp = raw.get("timestamp")
+    return ToolResult(source_call_id=source_call_id, content=content, timestamp=timestamp)
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -63,8 +118,9 @@ def _validate(doc: dict) -> None:
 
     version = doc.get("schema_version")
     _require(
-        isinstance(version, str) and re.match(r"^1\.5", version),
-        f"Expected schema_version matching '1.5.*', got {version!r}.",
+        isinstance(version, str)
+        and bool(re.match(r"^(?:ATIF-v)?1\.5(?:\..*)?$", version)),
+        f"Expected schema_version matching '(ATIF-v)1.5.*', got {version!r}.",
     )
     _require("session_id" in doc, "Missing required field: session_id.")
     _require(
@@ -81,9 +137,23 @@ def _validate(doc: dict) -> None:
 
         msg = step.get("message")
         if msg is not None:
-            _require(isinstance(msg, dict), f"Step {i}: 'message' must be an object.")
-            _require("role" in msg,    f"Step {i}: message missing 'role'.")
-            _require("content" in msg, f"Step {i}: message missing 'content'.")
+            _require(
+                isinstance(msg, (dict, str)),
+                f"Step {i}: 'message' must be an object or string.",
+            )
+            if isinstance(msg, dict):
+                _require(
+                    "content" in msg,
+                    f"Step {i}: message object missing 'content'.",
+                )
+                _require(
+                    "role" in msg or "source" in step,
+                    f"Step {i}: message object missing 'role' and step missing 'source'.",
+                )
+
+        source = step.get("source")
+        if source is not None:
+            _require(isinstance(source, str), f"Step {i}: 'source' must be a string.")
 
         tool_calls = step.get("tool_calls")
         if tool_calls is not None:
@@ -93,8 +163,14 @@ def _validate(doc: dict) -> None:
             )
             for j, tc in enumerate(tool_calls):
                 _require(isinstance(tc, dict), f"Step {i}, tool_call {j}: must be an object.")
-                _require("id"   in tc, f"Step {i}, tool_call {j}: missing 'id'.")
-                _require("name" in tc, f"Step {i}, tool_call {j}: missing 'name'.")
+                _require(
+                    "id" in tc or "tool_call_id" in tc,
+                    f"Step {i}, tool_call {j}: missing 'id'/'tool_call_id'.",
+                )
+                _require(
+                    "name" in tc or "function_name" in tc,
+                    f"Step {i}, tool_call {j}: missing 'name'/'function_name'.",
+                )
 
         obs = step.get("observation")
         if obs is not None:
@@ -111,8 +187,8 @@ def _validate(doc: dict) -> None:
                         f"Step {i}, result {k}: must be an object.",
                     )
                     _require(
-                        "source_call_id" in r,
-                        f"Step {i}, result {k}: missing 'source_call_id'.",
+                        "source_call_id" in r or "ref" in r,
+                        f"Step {i}, result {k}: missing 'source_call_id'/'ref'.",
                     )
 
 
@@ -181,6 +257,63 @@ def _decode_args(value: Any) -> Any:
     return value
 
 
+def _strip_attachment_content(value: Any) -> Any:
+    """
+    Remove embedded attachment payload markup from message text.
+
+    This keeps the actual conversation prompt visible while dropping verbose
+    `<attachments>...</attachments>` and standalone `<attachment>...</attachment>`
+    blocks from rendered message bodies.
+    """
+    if not isinstance(value, str):
+        return value
+
+    text = value
+    had_attachments = False
+
+    text, attachments_block_count = _ATTACHMENTS_BLOCK_RE.subn("", text)
+    had_attachments = had_attachments or attachments_block_count > 0
+
+    text, attachment_count = _ATTACHMENT_RE.subn("", text)
+    had_attachments = had_attachments or attachment_count > 0
+
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+
+    if had_attachments and not text:
+        return "[attachments omitted]"
+
+    return text
+
+
+def _extract_user_request_content(value: Any) -> Any:
+    """
+    If a message contains one or more <userRequest> blocks, keep only their
+    inner text. Otherwise return the original value unchanged.
+    """
+    if not isinstance(value, str):
+        return value
+
+    matches = [match.strip() for match in _USER_REQUEST_RE.findall(value) if match.strip()]
+    if not matches:
+        return value
+
+    return "\n\n".join(matches)
+
+
+def _normalize_message_body(value: Any, role: str) -> Any:
+    """
+    Clean message content for rendering.
+
+    - Remove bulky attachment payload sections for all roles.
+    - For user messages that include wrapper metadata, keep only the content
+      inside <userRequest>...</userRequest>.
+    """
+    body = _strip_attachment_content(value)
+    if role == "user":
+        body = _extract_user_request_content(body)
+    return body
+
+
 # ---------------------------------------------------------------------------
 # Loader
 # ---------------------------------------------------------------------------
@@ -211,12 +344,16 @@ def normalize(doc: dict) -> list[Event]:
     """
     Convert a validated ATIF-v1.5 document into a flat, ordered Event list.
 
-    Per-step emission order:
-      1. message      — one event for step.message
-      2. reasoning    — if step.reasoning_content is present
-      3. tool_calls   — one event per item in step.tool_calls[]
-      4. tool_results — one event per item in step.observation.results[]
-      5. metrics      — if step.metrics is present, as the final event
+        Per-step emission order:
+            1. message      — one event for step.message (object or string)
+            2. reasoning    — if step.reasoning_content is present
+            3. tool_calls   — one event per item in step.tool_calls[]
+            4. tool_results — one event per item in step.observation.results[]
+            5. metrics      — if step.metrics is present, as the final event
+
+        Supports both of these step shapes:
+            - canonical: message={role, content, timestamp}, tool_calls={id, name, arguments}
+            - spec-adherent trajectory: source + message="...", tool_calls={tool_call_id, function_name, arguments}
     """
     events: list[Event] = []
 
@@ -225,18 +362,24 @@ def normalize(doc: dict) -> list[Event]:
 
         # ── 1. message ──────────────────────────────────────────────────────
         raw_message = step.get("message")
-        step_ts: Optional[str] = None
+        step_ts: Optional[str] = step.get("timestamp")
 
         if raw_message is not None:
-            step_ts = raw_message.get("timestamp")
-            role = _canonical_role(raw_message.get("role", "user"))
+            if isinstance(raw_message, dict):
+                step_ts = raw_message.get("timestamp") or step_ts
+                role = _canonical_role(raw_message.get("role") or step.get("source", "user"))
+                body = _normalize_message_body(raw_message.get("content", ""), role)
+            else:
+                role = _canonical_role(str(step.get("source", "user")))
+                body = _normalize_message_body(str(raw_message), role)
+
             events.append(Event(
                 kind="message",
                 step_id=step_id,
                 ts=step_ts,
                 role=role,
                 title=None,
-                body=raw_message.get("content", ""),
+                body=body,
                 ref=None,
             ))
 
@@ -254,28 +397,30 @@ def normalize(doc: dict) -> list[Event]:
             ))
 
         # ── 3. tool_calls ────────────────────────────────────────────────────
-        for tc in step.get("tool_calls") or []:
+        for raw_tc in step.get("tool_calls") or []:
+            tc = parse_tool_call(raw_tc)
             events.append(Event(
                 kind="tool_call",
                 step_id=step_id,
-                ts=tc.get("timestamp"),
+                ts=tc.timestamp or step_ts,
                 role="agent",
-                title=tc["name"],
-                body=tc.get("arguments"),
-                ref=tc["id"],
+                title=tc.name,
+                body=tc.arguments,
+                ref=tc.call_id,
             ))
 
         # ── 4. tool_results ──────────────────────────────────────────────────
         obs = step.get("observation") or {}
-        for result in obs.get("results") or []:
+        for raw_result in obs.get("results") or []:
+            result = parse_tool_result(raw_result)
             events.append(Event(
                 kind="tool_result",
                 step_id=step_id,
-                ts=result.get("timestamp"),
+                ts=result.timestamp or step_ts,
                 role="tool",
                 title=None,
-                body=result.get("content"),
-                ref=result["source_call_id"],
+                body=result.content,
+                ref=result.source_call_id,
             ))
 
         # ── 5. metrics ───────────────────────────────────────────────────────
@@ -290,6 +435,19 @@ def normalize(doc: dict) -> list[Event]:
                 body=metrics,
                 ref=None,
             ))
+
+    final_metrics = doc.get("final_metrics")
+    if final_metrics is not None:
+        final_step_id = (events[-1].step_id + 1) if events else 1
+        events.append(Event(
+            kind="metrics",
+            step_id=final_step_id,
+            ts=None,
+            role="agent",
+            title="final_metrics",
+            body=final_metrics,
+            ref=None,
+        ))
 
     return events
 
