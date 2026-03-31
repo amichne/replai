@@ -11,6 +11,58 @@
   let showReasoning = false;
   let showMetrics = true;
   let filterText = '';
+  let activeCategoryFilters = new Set();
+
+  var DEFAULT_TOOL_CATEGORIES = {
+    terminal: ['run_in_terminal', 'run_task', 'run_in_background', 'get_terminal_output', 'kill_terminal'],
+    symbol: ['grep_search', 'grep_code', 'file_search', 'semantic_search', 'read_file', 'readfile', 'list_dir', 'get_errors', 'vscode_listCodeUsages', 'vscode_renameSymbol', 'search_subagent'],
+    mutation: ['apply_patch', 'write_file', 'create_file', 'replace_string_in_file', 'multi_replace_string_in_file', 'edit_notebook_file', 'create_directory'],
+  };
+
+  var LS_KEY_CATEGORIES = 'replai-tool-categories';
+
+  function loadToolCategories() {
+    try {
+      var stored = localStorage.getItem(LS_KEY_CATEGORIES);
+      if (stored) {
+        var parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+      }
+    } catch (_e) { /* ignore */ }
+    return JSON.parse(JSON.stringify(DEFAULT_TOOL_CATEGORIES));
+  }
+
+  function saveToolCategories() {
+    try { localStorage.setItem(LS_KEY_CATEGORIES, JSON.stringify(toolCategories)); } catch (_e) { /* ignore */ }
+  }
+
+  var toolCategories = loadToolCategories();
+
+  function categorizeTool(name) {
+    var n = String(name || '').toLowerCase();
+    for (var cat in toolCategories) {
+      if (!Object.prototype.hasOwnProperty.call(toolCategories, cat)) continue;
+      var list = toolCategories[cat];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].toLowerCase() === n) return cat;
+      }
+    }
+    return 'other';
+  }
+
+  var CATEGORY_COLORS = {
+    terminal: '#ea580c',
+    symbol: '#16a34a',
+    mutation: '#2563eb',
+    other: '#71717a',
+  };
+
+  var CATEGORY_LABELS = {
+    terminal: 'Terminal',
+    symbol: 'Symbol',
+    mutation: 'Mutation',
+    other: 'Other',
+  };
 
   const ROLE_LABEL = { user: 'USER', agent: 'AGENT', system: 'SYSTEM', tool: 'TOOL' };
   const ROLE_CLASS = { user: 'r-user', agent: 'r-agent', system: 'r-system', tool: 'r-tool' };
@@ -458,9 +510,24 @@
 
   function getVisibleStepIds() {
     const f = filterText.trim().toLowerCase();
-    if (!f) return stepOrder.slice();
+    var result = stepOrder.slice();
 
-    return stepOrder.filter(function (sid) {
+    // Apply category filters
+    if (activeCategoryFilters.size > 0) {
+      result = result.filter(function (sid) {
+        var events = stepMap.get(sid) || [];
+        return events.some(function (ev) {
+          if (ev.kind !== 'tool_call') return false;
+          var cat = categorizeTool(ev.title);
+          return activeCategoryFilters.has(cat);
+        });
+      });
+    }
+
+    // Apply text filter
+    if (!f) return result;
+
+    return result.filter(function (sid) {
       const events = stepMap.get(sid) || [];
       const preview = stepPreview(events).toLowerCase();
       const role = primaryRole(events).toLowerCase();
@@ -609,6 +676,11 @@
     };
     const toolCounts = new Map();
     const perStep = [];
+    var categoryCounts = {};
+    var categoryTokens = {};
+    var categoryCostUsd = {};
+    var categoryStepIds = {};
+    var categoryDistinctTools = {};
 
     ids.forEach(function (stepId) {
       const events = stepMap.get(stepId) || [];
@@ -622,7 +694,8 @@
         totalTokens: 0,
         costUsd: 0,
         toolCalls: 0,
-        toolNames: []
+        toolNames: [],
+        toolCategories: []
       };
 
       events.forEach(function (ev) {
@@ -631,10 +704,17 @@
         if (ev.kind === 'reasoning') summary.reasoning += 1;
         if (ev.kind === 'tool_call') {
           const toolName = String(ev.title || '?');
+          var cat = categorizeTool(toolName);
           summary.toolCalls += 1;
           stepInfo.toolCalls += 1;
           stepInfo.toolNames.push(toolName);
+          stepInfo.toolCategories.push(cat);
           toolCounts.set(toolName, (toolCounts.get(toolName) || 0) + 1);
+          categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+          if (!categoryDistinctTools[cat]) categoryDistinctTools[cat] = new Set();
+          categoryDistinctTools[cat].add(toolName);
+          if (!categoryStepIds[cat]) categoryStepIds[cat] = new Set();
+          categoryStepIds[cat].add(stepId);
         }
         if (ev.kind === 'tool_result') summary.toolResults += 1;
         if (ev.kind === 'metrics') {
@@ -652,6 +732,19 @@
       });
 
       perStep.push(stepInfo);
+    });
+
+    // Attribute step tokens/cost to categories present in that step
+    perStep.forEach(function (step) {
+      if (!step.toolCategories.length) return;
+      var catsInStep = {};
+      step.toolCategories.forEach(function (c) { catsInStep[c] = true; });
+      var catKeys = Object.keys(catsInStep);
+      var share = catKeys.length > 0 ? 1 / catKeys.length : 0;
+      catKeys.forEach(function (cat) {
+        categoryTokens[cat] = (categoryTokens[cat] || 0) + Math.round((step.totalTokens || 0) * share);
+        categoryCostUsd[cat] = (categoryCostUsd[cat] || 0) + (step.costUsd || 0) * share;
+      });
     });
 
     if (!summary.totalTokens && (summary.promptTokens || summary.completionTokens)) {
@@ -692,14 +785,260 @@
       return Math.max(maxValue, total || 0);
     }, 0);
 
+    // --- Category breakdown ---
+    var categoryBreakdown = [];
+    var allCats = ['terminal', 'symbol', 'mutation', 'other'];
+    var maxCatCalls = 0;
+    allCats.forEach(function (cat) {
+      var count = categoryCounts[cat] || 0;
+      if (count > maxCatCalls) maxCatCalls = count;
+    });
+    allCats.forEach(function (cat) {
+      var count = categoryCounts[cat] || 0;
+      if (count === 0) return;
+      categoryBreakdown.push({
+        category: cat,
+        label: CATEGORY_LABELS[cat] || cat,
+        color: CATEGORY_COLORS[cat] || '#71717a',
+        callCount: count,
+        distinctTools: categoryDistinctTools[cat] ? categoryDistinctTools[cat].size : 0,
+        tokens: categoryTokens[cat] || 0,
+        costUsd: categoryCostUsd[cat] || 0,
+        stepCount: categoryStepIds[cat] ? categoryStepIds[cat].size : 0,
+        barPct: maxCatCalls > 0 ? Math.max(4, Math.round((count / maxCatCalls) * 100)) : 0,
+      });
+    });
+
+    // --- Terminal success rate ---
+    var terminalSuccess = _computeTerminalSuccess(ids);
+
+    // --- Tool loops ---
+    var toolLoops = _computeToolLoops(perStep);
+
+    // --- Error detection (repetitive loops) ---
+    var errorDetection = _computeErrorDetection(ids);
+
+    // --- Tool sequences ---
+    var toolSequences = _computeToolSequences(perStep);
+
     return {
       summary: summary,
       perStep: perStep,
       topTools: topTools,
       tokenSteps: tokenSteps,
       maxTokenTotal: maxTokenTotal,
-      longestIteration: longestIteration
+      longestIteration: longestIteration,
+      categoryBreakdown: categoryBreakdown,
+      terminalSuccess: terminalSuccess,
+      toolLoops: toolLoops,
+      errorDetection: errorDetection,
+      toolSequences: toolSequences,
     };
+  }
+
+  function _parseExitCode(text) {
+    if (typeof text !== 'string') {
+      if (text && typeof text === 'object') {
+        if ('exit_code' in text) return Number(text.exit_code);
+        if ('exitCode' in text) return Number(text.exitCode);
+        text = JSON.stringify(text);
+      } else {
+        return null;
+      }
+    }
+    var m = text.match(/"exit_code"\s*:\s*(-?\d+)/);
+    if (m) return parseInt(m[1], 10);
+    m = text.match(/"exitCode"\s*:\s*(-?\d+)/);
+    if (m) return parseInt(m[1], 10);
+    m = text.match(/Exit code:\s*(-?\d+)/i);
+    if (m) return parseInt(m[1], 10);
+    return null;
+  }
+
+  function _looksLikeError(text) {
+    if (typeof text !== 'string') text = stringify(text);
+    var lower = text.toLowerCase();
+    return /\berror\b/.test(lower) || /\bfailed\b/.test(lower) || /\btraceback\b/.test(lower) ||
+      /\bexception\b/.test(lower) || /\bcommand not found\b/.test(lower) || /\bpermission denied\b/.test(lower);
+  }
+
+  function _computeTerminalSuccess(stepIds) {
+    var total = 0, succeeded = 0, failed = 0, unknown = 0, retriedAfterFailure = 0;
+    var lastFailed = false;
+    stepIds.forEach(function (stepId) {
+      var events = stepMap.get(stepId) || [];
+      var callRefs = {};
+      events.forEach(function (ev) {
+        if (ev.kind === 'tool_call' && (ev.title === 'run_in_terminal' || ev.title === 'run_task')) {
+          callRefs[ev.ref] = true;
+          total += 1;
+          if (lastFailed) retriedAfterFailure += 1;
+        }
+      });
+      events.forEach(function (ev) {
+        if (ev.kind === 'tool_result' && ev.ref && callRefs[ev.ref]) {
+          var exitCode = _parseExitCode(ev.body);
+          if (exitCode === 0) {
+            succeeded += 1;
+            lastFailed = false;
+          } else if (exitCode !== null) {
+            failed += 1;
+            lastFailed = true;
+          } else if (_looksLikeError(ev.body)) {
+            failed += 1;
+            lastFailed = true;
+          } else {
+            unknown += 1;
+            lastFailed = false;
+          }
+        }
+      });
+    });
+    var rate = total > 0 ? Math.round((succeeded / total) * 100) : null;
+    return { total: total, succeeded: succeeded, failed: failed, unknown: unknown, retriedAfterFailure: retriedAfterFailure, rate: rate };
+  }
+
+  function _computeToolLoops(perStep) {
+    var loops = [];
+    var i = 0;
+    while (i < perStep.length) {
+      var step = perStep[i];
+      if (!step.toolCategories.length) { i++; continue; }
+      // Determine dominant category of this step
+      var catCount = {};
+      step.toolCategories.forEach(function (c) { catCount[c] = (catCount[c] || 0) + 1; });
+      var dominant = Object.keys(catCount).sort(function (a, b) { return catCount[b] - catCount[a]; })[0];
+      var loopStart = i;
+      var loopStepIds = [step.stepId];
+      var j = i + 1;
+      while (j < perStep.length) {
+        var nextStep = perStep[j];
+        if (!nextStep.toolCategories.length) break;
+        var nc = {};
+        nextStep.toolCategories.forEach(function (c) { nc[c] = (nc[c] || 0) + 1; });
+        var nextDom = Object.keys(nc).sort(function (a, b) { return nc[b] - nc[a]; })[0];
+        if (nextDom !== dominant) break;
+        loopStepIds.push(nextStep.stepId);
+        j++;
+      }
+      var loopLen = j - loopStart;
+      if (loopLen >= 3) {
+        // Check if loop is "resolved" — ends with a mutation tool
+        var lastInLoop = perStep[j - 1];
+        var endedWithMutation = false;
+        // Check the step immediately after the loop for a mutation
+        if (j < perStep.length) {
+          var afterLoop = perStep[j];
+          if (afterLoop.toolCategories.indexOf('mutation') !== -1) endedWithMutation = true;
+        }
+        if (lastInLoop.toolCategories.indexOf('mutation') !== -1) endedWithMutation = true;
+        loops.push({
+          category: dominant,
+          label: CATEGORY_LABELS[dominant] || dominant,
+          color: CATEGORY_COLORS[dominant] || '#71717a',
+          startStepId: loopStepIds[0],
+          endStepId: loopStepIds[loopStepIds.length - 1],
+          length: loopLen,
+          resolved: endedWithMutation,
+          stepIds: loopStepIds,
+        });
+      }
+      i = j;
+    }
+    loops.sort(function (a, b) { return b.length - a.length; });
+    return loops;
+  }
+
+  function _computeErrorDetection(stepIds) {
+    var errors = [];
+    var prevCalls = []; // {name, argsKey, stepId}
+    stepIds.forEach(function (stepId) {
+      var events = stepMap.get(stepId) || [];
+      events.forEach(function (ev) {
+        if (ev.kind !== 'tool_call') return;
+        var name = String(ev.title || '?');
+        var argsKey = '';
+        try { argsKey = JSON.stringify(ev.body); } catch (_e) { argsKey = String(ev.body); }
+        // Check if same tool+args as previous call
+        var matchIdx = -1;
+        for (var k = prevCalls.length - 1; k >= 0; k--) {
+          if (prevCalls[k].name === name && prevCalls[k].argsKey === argsKey) {
+            matchIdx = k;
+            break;
+          }
+        }
+        if (matchIdx !== -1) {
+          // Find if there's already an error entry for this sequence
+          var existing = null;
+          for (var e = 0; e < errors.length; e++) {
+            if (errors[e].toolName === name && errors[e].argsKey === argsKey && errors[e].endStepId === prevCalls[matchIdx].stepId) {
+              existing = errors[e];
+              break;
+            }
+          }
+          if (existing) {
+            existing.repetitions += 1;
+            existing.endStepId = stepId;
+          } else {
+            errors.push({
+              toolName: name,
+              argsKey: argsKey,
+              category: categorizeTool(name),
+              startStepId: prevCalls[matchIdx].stepId,
+              endStepId: stepId,
+              repetitions: 2,
+            });
+          }
+        }
+        prevCalls.push({ name: name, argsKey: argsKey, stepId: stepId });
+      });
+    });
+    // Only show entries with 2+ repetitions
+    return errors.filter(function (e) { return e.repetitions >= 2; })
+      .sort(function (a, b) { return b.repetitions - a.repetitions; })
+      .slice(0, 10);
+  }
+
+  function _computeToolSequences(perStep) {
+    var ngramCounts = new Map();
+    perStep.forEach(function (step) {
+      if (step.toolNames.length < 2) return;
+      // 2-grams
+      for (var i = 0; i < step.toolNames.length - 1; i++) {
+        var bigram = step.toolNames[i] + ' → ' + step.toolNames[i + 1];
+        ngramCounts.set(bigram, (ngramCounts.get(bigram) || 0) + 1);
+      }
+      // 3-grams
+      for (var j = 0; j < step.toolNames.length - 2; j++) {
+        var trigram = step.toolNames[j] + ' → ' + step.toolNames[j + 1] + ' → ' + step.toolNames[j + 2];
+        ngramCounts.set(trigram, (ngramCounts.get(trigram) || 0) + 1);
+      }
+    });
+    // Also look at cross-step sequences (consecutive steps)
+    for (var s = 0; s < perStep.length - 1; s++) {
+      var cur = perStep[s];
+      var nxt = perStep[s + 1];
+      if (cur.toolNames.length && nxt.toolNames.length) {
+        var cross = cur.toolNames[cur.toolNames.length - 1] + ' → ' + nxt.toolNames[0];
+        ngramCounts.set(cross, (ngramCounts.get(cross) || 0) + 1);
+      }
+    }
+    var sequences = Array.from(ngramCounts.entries())
+      .filter(function (e) { return e[1] >= 2; })
+      .sort(function (a, b) { return b[1] - a[1]; })
+      .slice(0, 8)
+      .map(function (e) {
+        var tools = e[0].split(' → ');
+        var cats = tools.map(categorizeTool);
+        var dominantCat = cats.sort()[Math.floor(cats.length / 2)];
+        return {
+          pattern: e[0],
+          count: e[1],
+          dominantCategory: dominantCat,
+          color: CATEGORY_COLORS[dominantCat] || '#71717a',
+        };
+      });
+    return sequences;
   }
 
   function createSidebarPlaceholder(eyebrow, title, copy) {
@@ -757,16 +1096,46 @@
       ? 'step ' + analytics.longestIteration.stepId + ' → ' + analytics.longestIteration.nextStepId + ' · ' + formatDuration(analytics.longestIteration.durationMs)
       : 'n/a';
 
+    // Terminal vs Symbol summary text
+    var termCalls = 0, symCalls = 0;
+    analytics.categoryBreakdown.forEach(function (cb) {
+      if (cb.category === 'terminal') termCalls = cb.callCount;
+      if (cb.category === 'symbol') symCalls = cb.callCount;
+    });
+    var termVsSymText = formatCount(termCalls) + ' terminal / ' + formatCount(symCalls) + ' symbol';
+
+    // Terminal success summary
+    var ts = analytics.terminalSuccess;
+    var termSuccessText = ts.rate !== null ? ts.rate + '%' : 'n/a';
+    var termSuccessMeta = ts.total > 0
+      ? formatCount(ts.succeeded) + ' ok · ' + formatCount(ts.failed) + ' failed · ' + formatCount(ts.retriedAfterFailure) + ' retried'
+      : 'No terminal commands detected';
+
     const node = cloneTemplate('tpl-analytics-panel');
     setSlotText(node, 'subtitle', subtitle);
 
-    appendNodes(slot(node, 'summary'), [
+    var summaryRows = [
       createAnalyticsSummaryRow('Steps', formatCount(analytics.summary.steps), formatCount(analytics.summary.messages) + ' messages · ' + formatCount(analytics.summary.reasoning) + ' reasoning blocks'),
       createAnalyticsSummaryRow('Tool calls', formatCount(analytics.summary.toolCalls), formatCount(analytics.summary.toolResults) + ' tool results'),
+      createAnalyticsSummaryRow('Terminal vs Symbol', termVsSymText, analytics.categoryBreakdown.length + ' active categories'),
+      createAnalyticsSummaryRow('Terminal success', termSuccessText, termSuccessMeta),
       createAnalyticsSummaryRow('Tokens', formatCount(analytics.summary.totalTokens || (analytics.summary.promptTokens + analytics.summary.completionTokens)), 'prompt ' + formatCount(analytics.summary.promptTokens) + ' · completion ' + formatCount(analytics.summary.completionTokens)),
       createAnalyticsSummaryRow('Spend', formatCurrency(analytics.summary.costUsd), formatCount(analytics.summary.metricEvents) + ' metric events'),
       createAnalyticsSummaryRow('Longest iteration', longestText, analytics.longestIteration && analytics.longestIteration.preview ? analytics.longestIteration.preview : 'Measured from step timestamps')
-    ]);
+    ];
+
+    // Color-code Terminal success row
+    var termRow = summaryRows[3];
+    if (ts.rate !== null) {
+      var valNode = slot(termRow, 'value');
+      if (valNode) {
+        if (ts.rate >= 80) valNode.style.color = '#16a34a';
+        else if (ts.rate >= 50) valNode.style.color = '#ca8a04';
+        else valNode.style.color = '#dc2626';
+      }
+    }
+
+    appendNodes(slot(node, 'summary'), summaryRows);
 
     const toolItems = analytics.topTools.length
       ? analytics.topTools.slice(0, 8).map(function (tool) {
@@ -783,7 +1152,90 @@
         })
       : [createAnalyticsEmpty('No token or cost metrics were found in the current view.')];
 
+    // Category breakdown section
+    var catItems = analytics.categoryBreakdown.length
+      ? analytics.categoryBreakdown.map(function (cb) {
+          var row = createAnalyticsRow(cb.label, formatCount(cb.distinctTools) + ' tools · ' + formatCount(cb.stepCount) + ' steps', formatCount(cb.callCount), cb.barPct);
+          var barFill = slot(row, 'bar-fill');
+          if (barFill) barFill.style.background = cb.color;
+          return row;
+        })
+      : [createAnalyticsEmpty('No categorized tool calls.')];
+
+    // Terminal effectiveness section
+    var termItems = [];
+    if (ts.total > 0) {
+      var rateRow = createAnalyticsRow('Success rate', formatCount(ts.total) + ' commands', termSuccessText);
+      var rateLabel = rateRow.querySelector('.analytics-row-value');
+      if (rateLabel) {
+        if (ts.rate >= 80) rateLabel.style.color = '#16a34a';
+        else if (ts.rate >= 50) rateLabel.style.color = '#ca8a04';
+        else rateLabel.style.color = '#dc2626';
+      }
+      termItems.push(rateRow);
+      if (ts.failed > 0) termItems.push(createAnalyticsRow('Failed', '', formatCount(ts.failed)));
+      if (ts.retriedAfterFailure > 0) termItems.push(createAnalyticsRow('Retried after failure', '', formatCount(ts.retriedAfterFailure)));
+      if (ts.unknown > 0) termItems.push(createAnalyticsRow('Unknown outcome', '', formatCount(ts.unknown)));
+    } else {
+      termItems.push(createAnalyticsEmpty('No terminal commands in the current view.'));
+    }
+
+    // Tool loops section
+    var loopItems = analytics.toolLoops.length
+      ? analytics.toolLoops.slice(0, 8).map(function (loop) {
+          var row = cloneTemplate('tpl-analytics-loop-row');
+          var rangeLink = slot(row, 'range');
+          if (rangeLink) {
+            rangeLink.textContent = 'steps ' + loop.startStepId + '–' + loop.endStepId;
+            rangeLink.setAttribute('data-start-step', loop.startStepId);
+            rangeLink.style.cursor = 'pointer';
+            rangeLink.addEventListener('click', function () {
+              navigateToStep(loop.startStepId, true);
+            });
+          }
+          setSlotText(row, 'category', loop.label);
+          setSlotText(row, 'length', loop.length + ' steps');
+          var badge = slot(row, 'badge');
+          if (badge) {
+            badge.textContent = loop.resolved ? 'resolved' : 'unresolved';
+            badge.classList.add(loop.resolved ? 'badge-resolved' : 'badge-unresolved');
+          }
+          var catDot = slot(row, 'cat-dot');
+          if (catDot) catDot.style.background = loop.color;
+          return row;
+        })
+      : [createAnalyticsEmpty('No tool loops detected (3+ consecutive steps with same dominant category).')];
+
+    // Error detection section
+    var errorItems = analytics.errorDetection.length
+      ? analytics.errorDetection.map(function (err) {
+          var text = err.toolName + ' × ' + err.repetitions;
+          var meta = 'steps ' + err.startStepId + '–' + err.endStepId + ' (' + (CATEGORY_LABELS[err.category] || err.category) + ')';
+          var row = createAnalyticsRow(text, meta, '⚠');
+          row.style.cursor = 'pointer';
+          row.addEventListener('click', function () {
+            navigateToStep(err.startStepId, true);
+          });
+          return row;
+        })
+      : [createAnalyticsEmpty('No repetitive tool calls detected.')];
+
+    // Tool sequences section
+    var seqItems = analytics.toolSequences.length
+      ? analytics.toolSequences.map(function (seq) {
+          var row = createAnalyticsRow(seq.pattern, CATEGORY_LABELS[seq.dominantCategory] || seq.dominantCategory, '×' + seq.count);
+          var primaryEl = row.querySelector('.analytics-row-label strong');
+          if (primaryEl) primaryEl.style.fontSize = '10px';
+          return row;
+        })
+      : [createAnalyticsEmpty('No recurring tool sequences found.')];
+
     appendNodes(slot(node, 'sections'), [
+      createAnalyticsSection('Tool category breakdown', catItems),
+      createAnalyticsSection('Terminal effectiveness', termItems),
+      createAnalyticsSection('Tool loops', loopItems),
+      createAnalyticsSection('Repetitive calls', errorItems),
+      createAnalyticsSection('Common sequences', seqItems),
       createAnalyticsSection('Top tools', toolItems),
       createAnalyticsSection('Token usage by step', tokenItems)
     ]);
@@ -1042,6 +1494,149 @@
     showMetrics = !showMetrics;
     renderConversation();
   });
+
+  // --- Settings panel ---
+  var showSettings = false;
+
+  function renderSettingsPanel() {
+    var container = document.getElementById('settings-panel');
+    if (!container) return;
+    container.hidden = !showSettings;
+    if (!showSettings) return;
+    clearNode(container);
+
+    var allCats = ['terminal', 'symbol', 'mutation'];
+    allCats.forEach(function (cat) {
+      var section = document.createElement('div');
+      section.className = 'settings-category';
+      var heading = document.createElement('div');
+      heading.className = 'settings-cat-heading';
+      var dot = document.createElement('span');
+      dot.className = 'cat-dot';
+      dot.style.background = CATEGORY_COLORS[cat] || '#71717a';
+      heading.appendChild(dot);
+      heading.appendChild(document.createTextNode(' ' + (CATEGORY_LABELS[cat] || cat)));
+      section.appendChild(heading);
+
+      var chips = document.createElement('div');
+      chips.className = 'settings-chips';
+      var list = toolCategories[cat] || [];
+      list.forEach(function (tool) {
+        var chip = document.createElement('span');
+        chip.className = 'settings-chip';
+        chip.textContent = tool;
+        var removeBtn = document.createElement('button');
+        removeBtn.className = 'chip-remove';
+        removeBtn.textContent = '×';
+        removeBtn.title = 'Remove ' + tool + ' from ' + cat;
+        removeBtn.addEventListener('click', function () {
+          var idx = toolCategories[cat].indexOf(tool);
+          if (idx !== -1) toolCategories[cat].splice(idx, 1);
+          saveToolCategories();
+          renderSettingsPanel();
+          renderConversation();
+        });
+        chip.appendChild(removeBtn);
+        chips.appendChild(chip);
+      });
+      section.appendChild(chips);
+
+      var addRow = document.createElement('div');
+      addRow.className = 'settings-add-row';
+      var input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Add tool name…';
+      input.className = 'settings-add-input';
+      var addBtn = document.createElement('button');
+      addBtn.className = 'ctrl-btn';
+      addBtn.textContent = 'Add';
+      addBtn.style.fontSize = '10px';
+      addBtn.style.padding = '4px 8px';
+      addBtn.addEventListener('click', function () {
+        var val = input.value.trim();
+        if (!val) return;
+        if (!toolCategories[cat]) toolCategories[cat] = [];
+        // Remove from other categories first
+        allCats.forEach(function (c) {
+          if (!toolCategories[c]) return;
+          var i = toolCategories[c].indexOf(val);
+          if (i !== -1) toolCategories[c].splice(i, 1);
+        });
+        toolCategories[cat].push(val);
+        saveToolCategories();
+        input.value = '';
+        renderSettingsPanel();
+        renderConversation();
+      });
+      addRow.appendChild(input);
+      addRow.appendChild(addBtn);
+      section.appendChild(addRow);
+
+      container.appendChild(section);
+    });
+
+    var resetBtn = document.createElement('button');
+    resetBtn.className = 'ctrl-btn';
+    resetBtn.textContent = 'Reset to defaults';
+    resetBtn.style.marginTop = '8px';
+    resetBtn.style.fontSize = '10px';
+    resetBtn.addEventListener('click', function () {
+      toolCategories = JSON.parse(JSON.stringify(DEFAULT_TOOL_CATEGORIES));
+      saveToolCategories();
+      renderSettingsPanel();
+      renderConversation();
+    });
+    container.appendChild(resetBtn);
+  }
+
+  document.getElementById('btn-settings').addEventListener('click', function () {
+    showSettings = !showSettings;
+    this.classList.toggle('on', showSettings);
+    this.textContent = showSettings ? 'Hide Settings' : 'Settings';
+    renderSettingsPanel();
+  });
+
+  // --- Category filter chips ---
+  function renderCategoryChips() {
+    var container = document.getElementById('category-filters');
+    if (!container) return;
+    clearNode(container);
+    var cats = ['terminal', 'symbol', 'mutation', 'other'];
+    cats.forEach(function (cat) {
+      var chip = document.createElement('button');
+      chip.className = 'cat-filter-chip';
+      if (activeCategoryFilters.has(cat)) chip.classList.add('active');
+      chip.style.setProperty('--cat-color', CATEGORY_COLORS[cat] || '#71717a');
+      var dot = document.createElement('span');
+      dot.className = 'cat-dot';
+      dot.style.background = CATEGORY_COLORS[cat] || '#71717a';
+      chip.appendChild(dot);
+      chip.appendChild(document.createTextNode(' ' + (CATEGORY_LABELS[cat] || cat)));
+      chip.addEventListener('click', function () {
+        if (activeCategoryFilters.has(cat)) {
+          activeCategoryFilters.delete(cat);
+        } else {
+          activeCategoryFilters.add(cat);
+        }
+        renderCategoryChips();
+        renderConversation();
+      });
+      container.appendChild(chip);
+    });
+    if (activeCategoryFilters.size > 0) {
+      var clearBtn = document.createElement('button');
+      clearBtn.className = 'cat-filter-chip cat-filter-clear';
+      clearBtn.textContent = '✕ Clear';
+      clearBtn.addEventListener('click', function () {
+        activeCategoryFilters.clear();
+        renderCategoryChips();
+        renderConversation();
+      });
+      container.appendChild(clearBtn);
+    }
+  }
+
+  renderCategoryChips();
 
   document.getElementById('btn-raw').addEventListener('click', function () {
     if (!hasLoadedDoc()) return;

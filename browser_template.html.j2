@@ -33,16 +33,21 @@
   <div class="controls">
     <input id="file-input" type="file" accept=".json,.atif,.txt,application/json">
     <button id="btn-open" class="ctrl-btn" title="Open a local trajectory file">Open File</button>
+    <div id="category-filters" class="category-filters"></div>
     <input id="filter-input" type="text" placeholder="Filter chain…" autocomplete="off">
     <button id="btn-collapse-all" class="ctrl-btn" title="Collapse or expand all nodes">Fold All</button>
     <button id="btn-reasoning" class="ctrl-btn" title="Toggle reasoning blocks">Show Reasoning</button>
     <button id="btn-metrics" class="ctrl-btn on" title="Toggle metrics and analytics">Hide Metrics</button>
+    <button id="btn-settings" class="ctrl-btn" title="Configure tool categories">Settings</button>
     <button id="btn-raw" class="ctrl-btn" title="View raw ATIF JSON">Raw JSON</button>
   </div>
 </header>
 <div id="app">
   <main id="conversation"></main>
-  <aside id="sidebar"><div id="sidebar-content"></div></aside>
+  <aside id="sidebar">
+    <div id="settings-panel" class="settings-panel" hidden></div>
+    <div id="sidebar-content"></div>
+  </aside>
 </div>
 <div id="raw-modal">
   <div id="raw-pane">
@@ -198,6 +203,19 @@
 </template>
 <template id="tpl-analytics-empty">
   <div class="analytics-empty" data-slot="message"></div>
+</template>
+<template id="tpl-analytics-loop-row">
+  <div class="analytics-loop-row">
+    <div class="analytics-loop-main">
+      <span class="cat-dot" data-slot="cat-dot"></span>
+      <a class="analytics-loop-range" data-slot="range"></a>
+      <span class="analytics-loop-cat" data-slot="category"></span>
+    </div>
+    <div class="analytics-loop-end">
+      <span class="analytics-loop-len" data-slot="length"></span>
+      <span class="analytics-badge" data-slot="badge"></span>
+    </div>
+  </div>
 </template>
 <script>
 /* Data injected by Python — do not edit the constants below by hand. */
