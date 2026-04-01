@@ -32,3 +32,4 @@ MANIFEST
 *.spec
 
 # Installer
+.venv/
