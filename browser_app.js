@@ -14,9 +14,9 @@
   let activeCategoryFilters = new Set();
 
   var DEFAULT_TOOL_CATEGORIES = {
-    terminal: ['run_in_terminal', 'run_task', 'run_in_background', 'get_terminal_output', 'kill_terminal'],
-    symbol: ['grep_search', 'grep_code', 'file_search', 'semantic_search', 'read_file', 'readfile', 'list_dir', 'get_errors', 'vscode_listCodeUsages', 'vscode_renameSymbol', 'search_subagent'],
-    mutation: ['apply_patch', 'write_file', 'create_file', 'replace_string_in_file', 'multi_replace_string_in_file', 'edit_notebook_file', 'create_directory'],
+    terminal: [],
+    symbol: [],
+    mutation: [],
   };
 
   var LS_KEY_CATEGORIES = 'replai-tool-categories';
@@ -39,12 +39,16 @@
   var toolCategories = loadToolCategories();
 
   function categorizeTool(name) {
-    var n = String(name || '').toLowerCase();
+    var n = String(name || '');
     for (var cat in toolCategories) {
       if (!Object.prototype.hasOwnProperty.call(toolCategories, cat)) continue;
       var list = toolCategories[cat];
       for (var i = 0; i < list.length; i++) {
-        if (list[i].toLowerCase() === n) return cat;
+        try {
+          if (new RegExp(list[i], 'i').test(n)) return cat;
+        } catch (_e) {
+          if (list[i].toLowerCase() === n.toLowerCase()) return cat;
+        }
       }
     }
     return 'other';
@@ -652,12 +656,10 @@
   function renderMetricsEvent(ev) {
     if (!showMetrics) return null;
     const metrics = normalizeMetricPayload(ev.body).raw;
-    const node = cloneTemplate('tpl-event-metrics');
-    const detail = cloneTemplate('tpl-json-detail');
-    setSlotText(detail, 'summary', 'Expand metrics JSON');
+    const detail = cloneTemplate('tpl-node-json');
+    setSlotText(detail, 'summary', 'Metrics JSON');
     slot(detail, 'content').appendChild(createCodeBlock(stringify(metrics), 'language-json'));
-    node.appendChild(detail);
-    return node;
+    return detail;
   }
 
   function computeAnalytics(stepIds) {
@@ -1294,6 +1296,44 @@
     return node;
   }
 
+  function renderToolCallPaired(callEv, resultEv) {
+    var group = document.createElement('div');
+    group.className = 'tool-pair';
+    var cat = categorizeTool(callEv.title);
+    var color = CATEGORY_COLORS[cat] || '#71717a';
+
+    // Tool call section
+    var callNode = cloneTemplate('tpl-event-tool-call');
+    var ref = slot(callNode, 'ref');
+    if (callEv.ref) { ref.hidden = false; ref.textContent = '#' + callEv.ref; }
+    setSlotText(callNode, 'title', callEv.title || '?');
+    // Add category tag
+    var catTag = document.createElement('span');
+    catTag.className = 'tool-cat-tag';
+    catTag.textContent = CATEGORY_LABELS[cat] || cat;
+    catTag.style.setProperty('--tag-color', color);
+    var headingLine = callNode.querySelector('.event-summary-line');
+    if (headingLine) headingLine.appendChild(catTag);
+    appendNodes(callNode, createJsonDetailNodes('Expand tool arguments JSON', callEv.body));
+    group.appendChild(callNode);
+
+    // Tool result section (or missing indicator)
+    if (resultEv) {
+      var resultNode = cloneTemplate('tpl-event-tool-result');
+      var rref = slot(resultNode, 'ref');
+      if (resultEv.ref) { rref.hidden = false; rref.textContent = '#' + resultEv.ref; }
+      appendNodes(resultNode, createJsonDetailNodes('Expand full result JSON', resultEv.body));
+      group.appendChild(resultNode);
+    } else {
+      var missing = document.createElement('div');
+      missing.className = 'tool-result-missing';
+      missing.innerHTML = '<span class="missing-icon">⚠</span> No result returned for this tool call';
+      group.appendChild(missing);
+    }
+
+    return group;
+  }
+
   function buildStepNode(stepId, events, isTarget) {
     const node = cloneTemplate('tpl-step-node');
     const role = primaryRole(events);
@@ -1304,7 +1344,31 @@
     const collapsed = collapsedSteps.has(stepId);
     const stepDoc = stepDocMap.get(stepId);
     const stepJson = stepDoc != null ? stringify(stepDoc) : stringify(events);
-    const renderedEvents = events.map(renderEvent).filter(Boolean);
+
+    // Pair tool_calls with tool_results by ref
+    var toolCalls = [];
+    var toolResultMap = {};
+    var otherEvents = [];
+    events.forEach(function (ev) {
+      if (ev.kind === 'tool_call') {
+        toolCalls.push(ev);
+      } else if (ev.kind === 'tool_result') {
+        if (ev.ref) toolResultMap[ev.ref] = ev;
+      } else {
+        otherEvents.push(ev);
+      }
+    });
+
+    var renderedEvents = [];
+    otherEvents.forEach(function (ev) {
+      var rendered = renderEvent(ev);
+      if (rendered) renderedEvents.push(rendered);
+    });
+    toolCalls.forEach(function (callEv) {
+      var resultEv = callEv.ref ? toolResultMap[callEv.ref] : null;
+      renderedEvents.push(renderToolCallPaired(callEv, resultEv || null));
+    });
+
     const roleNode = setSlotText(node, 'role', roleLabel);
     const tsNode = slot(node, 'timestamp');
     const toggleButton = slot(node, 'toggle');
@@ -1326,6 +1390,25 @@
     } else {
       tsNode.hidden = true;
       tsNode.textContent = '';
+    }
+
+    // Category tags in header
+    var tagsContainer = slot(node, 'tags');
+    if (tagsContainer) {
+      var seenCats = {};
+      events.forEach(function (ev) {
+        if (ev.kind === 'tool_call') {
+          var cat = categorizeTool(ev.title);
+          seenCats[cat] = true;
+        }
+      });
+      Object.keys(seenCats).forEach(function (cat) {
+        var tag = document.createElement('span');
+        tag.className = 'node-cat-tag';
+        tag.textContent = CATEGORY_LABELS[cat] || cat;
+        tag.style.setProperty('--tag-color', CATEGORY_COLORS[cat] || '#71717a');
+        tagsContainer.appendChild(tag);
+      });
     }
 
     toggleButton.textContent = collapsed ? 'Expand' : 'Fold';
@@ -1545,7 +1628,7 @@
       addRow.className = 'settings-add-row';
       var input = document.createElement('input');
       input.type = 'text';
-      input.placeholder = 'Add tool name…';
+      input.placeholder = 'Add regex pattern…';
       input.className = 'settings-add-input';
       var addBtn = document.createElement('button');
       addBtn.className = 'ctrl-btn';

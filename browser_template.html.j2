@@ -78,6 +78,7 @@
         <div class="node-title">
           <span class="node-step" data-slot="step"></span>
           <span class="node-role" data-slot="role"></span>
+          <span class="node-tags" data-slot="tags"></span>
           <span class="node-preview" data-slot="preview"></span>
           <span class="node-timestamp" data-slot="timestamp" hidden></span>
         </div>
@@ -134,9 +135,7 @@
   </section>
 </template>
 <template id="tpl-event-metrics">
-  <section class="event-block metrics">
-    <span class="event-label">⬡ metrics</span>
-  </section>
+  <div class="metrics-inline"></div>
 </template>
 <template id="tpl-json-detail">
   <details class="json-detail">
