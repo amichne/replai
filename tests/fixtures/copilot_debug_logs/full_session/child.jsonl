@@ -1,0 +1,1 @@
+{"ts":1775054510000,"dur":0,"sid":"child-session-001","type":"agent_response","name":"agent_response","spanId":"child-agent-eee666","parentSpanId":"child-ref-ddd555","status":"ok","attrs":{"response":"[{\"role\":\"assistant\",\"parts\":[{\"type\":\"text\",\"content\":\"Child sub-agent finished.\"}]}]"}}

@@ -1,3 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATIF Replay · open local trajectory</title>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/languages/json.min.js"></script>
+<style>
+:root {
+  --bg: #fcfcfc;
+  --panel: #ffffff;
+  --panel-soft: #fafafa;
+  --panel-muted: #f7f7f8;
+  --border: #ededee;
+  --border-strong: #e4e4e7;
+  --text: #111111;
+  --text-soft: #52525b;
+  --text-faint: #71717a;
+  --text-subtle: #a1a1aa;
+  --accent: #111111;
+  --accent-soft: #f4f4f5;
+  --code-bg: #fafafa;
+  --shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+  --shadow-strong: 0 14px 30px rgba(15, 23, 42, 0.06);
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  background: rgba(255, 255, 255, 0.94);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(10px);
+  flex-shrink: 0;
+  min-height: 60px;
+}
+
+.brand-lockup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.brand-subtitle {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.session-meta {
+  font-size: 12px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.session-meta em {
+  font-style: normal;
+  color: var(--text);
+}
+
+.session-meta-key {
+  color: var(--text-faint);
+}
+
+.session-meta-separator {
+  color: var(--text-subtle);
+  margin: 0 0.28rem;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+#file-input { display: none; }
+
+#filter-input {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  width: 210px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+#filter-input:focus {
+  border-color: #a1a1aa;
+  box-shadow: 0 0 0 4px rgba(24, 24, 27, 0.06);
+}
+
+#filter-input::placeholder {
+  color: var(--text-subtle);
+}
+
+.ctrl-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.ctrl-btn:hover  {
+  background: var(--panel-soft);
+  color: var(--text);
+  border-color: var(--border-strong);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.04);
+}
+
+.ctrl-btn:active { transform: translateY(1px); }
+
+.ctrl-btn.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.ctrl-btn:disabled,
+.ctrl-btn.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+#app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+#app.metrics-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#conversation {
+  overflow-y: auto;
+  padding: 24px 20px 30px;
+  background: var(--bg);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#conversation.dragging {
+  background: #f4f4f5;
+}
+
+#sidebar {
+  border-left: 1px solid var(--border);
+  background: #fbfbfb;
+  overflow-y: auto;
+  padding: 18px 16px 22px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#app.metrics-hidden #sidebar {
+  display: none;
+}
+
+#sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chain-inner {
+  position: relative;
+  max-width: 900px;
+  margin: 0 auto;
+  padding-left: 24px;
+}
+
+.chain-inner::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: linear-gradient(180deg, #d4d4d8, #efefef);
+}
+
+.r-user   { color: #0f766e; }
+.r-agent  { color: #166534; }
+.r-system { color: #92400e; }
+.r-tool   { color: #5b21b6; }
+
+.step-node {
+  position: relative;
+  margin-bottom: 14px;
+  scroll-margin-top: 88px;
+}
+
+.step-node::before {
+  content: '';
+  position: absolute;
+  left: -22px;
+  top: 18px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 2px solid #27272a;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.95);
+}
+
+.step-node.role-user::before { border-color: #0f766e; }
+.step-node.role-agent::before { border-color: #166534; }
+.step-node.role-system::before { border-color: #92400e; }
+.step-node.role-tool::before { border-color: #5b21b6; }
+
+.step-node.is-target .node-shell {
+  border-color: #111111;
+  box-shadow: 0 0 0 1px rgba(17, 17, 17, 0.08), var(--shadow-strong);
+}
+
+.step-node.flash .node-shell {
+  animation: step-flash 1.35s ease;
+}
+
+@keyframes step-flash {
+  0%   { box-shadow: 0 0 0 0 rgba(17, 17, 17, 0.16), var(--shadow-strong); }
+  35%  { box-shadow: 0 0 0 8px rgba(17, 17, 17, 0.05), var(--shadow-strong); }
+  100% { box-shadow: var(--shadow-strong); }
+}
+
+.node-shell {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.node-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 100%);
+}
+
+.node-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+  font-family: var(--mono);
+}
+
+.node-step {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.node-role {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.node-preview {
+  color: var(--text-soft);
+  font-size: 11px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 58ch;
+}
+
+.node-timestamp {
+  color: var(--text-subtle);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.node-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.node-action {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: var(--mono);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.node-action:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.node-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-family: var(--mono);
+}
+
+.step-node.collapsed .node-body {
+  display: none;
+}
+
+.event-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-soft);
+  padding: 10px 12px;
+}
+
+.event-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.event-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.event-ref {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.event-body,
+.event-snippet,
+.json-detail pre,
+.node-json pre {
+  line-height: 1.6;
+}
+
+.event-body { color: var(--text); }
+.event-body.system { color: #92400e; }
+.event-body.user { color: #134e4a; }
+.event-body.agent { color: #14532d; }
+.event-body.tool { color: #4c1d95; }
+
+.event-block.reasoning {
+  border-left: 3px solid #d4d4d8;
+  background: #fafafa;
+}
+
+.event-block.reasoning .event-body {
+  color: var(--text-soft);
+  font-style: italic;
+}
+
+.event-block.tool-call {
+  border-left: 3px solid #27272a;
+}
+
+.event-block.tool-result {
+  border-left: 3px solid #71717a;
+}
+
+.event-summary-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-soft);
+}
+
+.symbol-tool,
+.symbol-result,
+.tool-name {
+  color: var(--text);
+}
+
+.tool-name { font-weight: 700; }
+.tool-paren { color: var(--text-faint); }
+
+.event-snippet {
+  color: var(--text-soft);
+  margin-top: 8px;
+}
+
+.json-detail,
+.node-json {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.json-detail summary,
+.node-json summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  color: var(--text-soft);
+  font-size: 12px;
+  user-select: none;
+}
+
+.json-detail summary::-webkit-details-marker,
+.node-json summary::-webkit-details-marker { display: none; }
+
+.json-detail summary::before,
+.node-json summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 8px;
+  transition: transform 0.12s ease;
+}
+
+.json-detail[open] summary::before,
+.node-json[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.json-detail pre,
+.node-json pre {
+  padding: 0 12px 12px;
+  color: var(--text);
+}
+
+.event-block.metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  color: var(--text-soft);
+}
+
+.metrics-pairs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.metrics-key { color: var(--text-faint); }
+.metrics-val { color: var(--text); }
+
+.sidebar-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.sidebar-panel-head {
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, #ffffff 0%, #fdfdfd 100%);
+}
+
+.sidebar-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sidebar-title {
+  margin-top: 4px;
+  font-size: 14px;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.sidebar-copy {
+  margin-top: 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.analytics-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.analytics-subtitle {
+  color: var(--text-soft);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.analytics-body {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analytics-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analytics-summary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  padding: 10px 12px;
+}
+
+.analytics-summary-main {
+  min-width: 0;
+}
+
+.analytics-summary-label {
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.analytics-summary-value {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.3;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.analytics-summary-meta {
+  margin-top: 4px;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.analytics-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.analytics-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  padding: 12px;
+}
+
+.analytics-section h3 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.analytics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.analytics-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.analytics-row-main {
+  min-width: 0;
+}
+
+.analytics-row-label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.analytics-row-label strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.analytics-row-label span {
+  color: var(--text-faint);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analytics-row-value {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.analytics-bar {
+  margin-top: 5px;
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #ececee;
+}
+
+.analytics-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #d4d4d8, #71717a);
+}
+
+.analytics-empty {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.code-block {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--code-bg);
+  overflow: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.code-block::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.code-syntax,
+.hljs {
+  display: block;
+  padding: 12px 13px 13px;
+  min-width: max-content;
+  background: transparent !important;
+  color: #111111;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #6b7280;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-title,
+.hljs-section,
+.hljs-doctag {
+  color: #c2410c;
+}
+
+.hljs-string,
+.hljs-attr,
+.hljs-template-variable {
+  color: #15803d;
+}
+
+.hljs-number,
+.hljs-type,
+.hljs-symbol,
+.hljs-bullet {
+  color: #7c3aed;
+}
+
+.hljs-property,
+.hljs-built_in,
+.hljs-variable,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #1d4ed8;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: calc(100vh - 220px);
+  color: var(--text-soft);
+  font-size: 14px;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 24px;
+  background: #ffffff;
+  padding: 48px 32px;
+  box-shadow: var(--shadow);
+}
+
+.empty-state strong {
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.empty-state p {
+  max-width: 580px;
+  line-height: 1.7;
+}
+
+.empty-state .empty-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.inline-error {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  background: #fef2f2;
+  border-radius: 14px;
+  color: #b91c1c;
+  white-space: pre-wrap;
+}
+
+#raw-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 17, 0.28);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#raw-modal.open { display: flex; }
+
+#raw-pane {
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  width: min(960px, 88vw);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.16);
+}
+
+#raw-pane-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-soft);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+#close-raw {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0 2px;
+  transition: color 0.1s ease;
+}
+
+#close-raw:hover { color: var(--text); }
+
+#raw-content {
+  overflow: auto;
+  padding: 0;
+  flex: 1;
+  line-height: 1.6;
+  background: var(--code-bg);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+#conversation::-webkit-scrollbar,
+#sidebar::-webkit-scrollbar,
+#raw-content::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+@media (max-width: 1100px) {
+  #app {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+}
+
+@media (max-width: 920px) {
+  html, body {
+    overflow: auto;
+  }
+
+  body {
+    min-height: 100%;
+  }
+
+  header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .controls {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  #filter-input {
+    flex: 1 1 180px;
+  }
+
+  #app,
+  #app.metrics-hidden {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+
+  #conversation,
+  #sidebar {
+    overflow: visible;
+  }
+
+  #sidebar {
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .node-header {
+    flex-direction: column;
+  }
+
+  .node-actions {
+    justify-content: flex-start;
+  }
+}
+
+/* --- Category filter chips --- */
+.category-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.cat-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cat-filter-chip:hover {
+  background: var(--panel-soft);
+  border-color: var(--border-strong);
+}
+
+.cat-filter-chip.active {
+  background: var(--cat-color, #111);
+  border-color: var(--cat-color, #111);
+  color: #ffffff;
+}
+
+.cat-filter-chip.active .cat-dot {
+  background: #ffffff !important;
+}
+
+.cat-filter-clear {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.cat-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+/* --- Settings panel --- */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 14px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-category {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-soft);
+  padding: 10px 12px;
+}
+
+.settings-cat-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.settings-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: var(--mono);
+}
+
+.chip-remove {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 2px;
+  transition: color 0.1s ease;
+}
+
+.chip-remove:hover {
+  color: #dc2626;
+}
+
+.settings-add-row {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.settings-add-input {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: var(--mono);
+  outline: none;
+}
+
+.settings-add-input:focus {
+  border-color: #a1a1aa;
+}
+
+/* --- Analytics loop rows --- */
+.analytics-loop-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.analytics-loop-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.analytics-loop-range {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.analytics-loop-range:hover {
+  color: #2563eb;
+}
+
+.analytics-loop-cat {
+  color: var(--text-faint);
+  font-size: 10px;
+}
+
+.analytics-loop-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.analytics-loop-len {
+  color: var(--text-soft);
+  font-size: 10px;
+}
+
+.analytics-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.badge-resolved {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.badge-unresolved {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+/* --- Pastel category tags (turn attribution) --- */
+.node-tags {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 2px;
+}
+
+.node-cat-tag,
+.tool-cat-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--tag-color, #71717a);
+  background: color-mix(in srgb, var(--tag-color, #71717a) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tag-color, #71717a) 22%, transparent);
+  white-space: nowrap;
+  vertical-align: middle;
+  line-height: 1.6;
+}
+
+.tool-cat-tag {
+  margin-left: 6px;
+  font-size: 8px;
+  padding: 0 6px;
+}
+
+/* --- Tool call/result pairing --- */
+.tool-pair {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+
+.tool-pair .event-block {
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.tool-pair .event-block.tool-call {
+  border-bottom: 1px dashed var(--border);
+}
+
+.tool-pair .event-block.tool-result {
+  background: color-mix(in srgb, var(--panel-soft) 60%, transparent);
+}
+
+/* --- Missing tool result indicator --- */
+.tool-result-missing {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-top: 1px dashed #fecaca;
+}
+
+.missing-icon {
+  font-size: 14px;
+}
+
+</style>
+</head>
+<body>
+<header>
+  <div class="brand-lockup">
+    <div class="brand">ATIF Replay</div>
+    <div class="brand-subtitle">Portable conversation replay</div>
+  </div>
+  <div class="session-meta" id="session-meta">
+    <span data-slot="empty">no trajectory loaded</span>
+    <span data-slot="loaded" hidden>
+      <span class="session-meta-key">session</span>
+      <em data-slot="session-id"></em>
+      <span class="session-meta-separator">·</span>
+      <span class="session-meta-key">agent</span>
+      <em data-slot="agent-name"></em>
+      <span class="session-meta-separator">·</span>
+      <em data-slot="step-count"></em>
+    </span>
+  </div>
+  <div class="controls">
+    <input id="file-input" type="file" accept=".json,.atif,.txt,application/json">
+    <button id="btn-open" class="ctrl-btn" title="Open a local trajectory file">Open File</button>
+    <div id="category-filters" class="category-filters"></div>
+    <input id="filter-input" type="text" placeholder="Filter chain…" autocomplete="off">
+    <button id="btn-collapse-all" class="ctrl-btn" title="Collapse or expand all nodes">Fold All</button>
+    <button id="btn-reasoning" class="ctrl-btn" title="Toggle reasoning blocks">Show Reasoning</button>
+    <button id="btn-metrics" class="ctrl-btn on" title="Toggle metrics and analytics">Hide Metrics</button>
+    <button id="btn-settings" class="ctrl-btn" title="Configure tool categories">Settings</button>
+    <button id="btn-raw" class="ctrl-btn" title="View raw ATIF JSON">Raw JSON</button>
+  </div>
+</header>
+<div id="app">
+  <main id="conversation"></main>
+  <aside id="sidebar">
+    <div id="settings-panel" class="settings-panel" hidden></div>
+    <div id="sidebar-content"></div>
+  </aside>
+</div>
+<div id="raw-modal">
+  <div id="raw-pane">
+    <div id="raw-pane-header">
+      <span id="raw-pane-title">Raw ATIF JSON</span>
+      <button id="close-raw" title="Close">&times;</button>
+    </div>
+    <pre id="raw-content"></pre>
+  </div>
+</div>
+<template id="tpl-inline-error">
+  <div class="inline-error" data-slot="message"></div>
+</template>
+<template id="tpl-empty-state">
+  <div class="empty-state">
+    <strong data-slot="title"></strong>
+    <p data-slot="message"></p>
+    <p data-slot="extra">You can use the <strong>Open File</strong> button above or drag a JSON file onto this pane. No upload happens; the file stays local in your browser.</p>
+    <div class="empty-actions">
+      <button class="ctrl-btn on" data-action="open-file">Open File</button>
+    </div>
+  </div>
+</template>
+<template id="tpl-step-node">
+  <article class="step-node">
+    <div class="node-shell">
+      <div class="node-header">
+        <div class="node-title">
+          <span class="node-step" data-slot="step"></span>
+          <span class="node-role" data-slot="role"></span>
+          <span class="node-tags" data-slot="tags"></span>
+          <span class="node-preview" data-slot="preview"></span>
+          <span class="node-timestamp" data-slot="timestamp" hidden></span>
+        </div>
+        <div class="node-actions">
+          <button class="node-action" data-action="toggle-step" data-slot="toggle"></button>
+          <button class="node-action" data-action="link-step" data-slot="link">Link</button>
+        </div>
+      </div>
+      <div class="node-body" data-slot="body"></div>
+    </div>
+  </article>
+</template>
+<template id="tpl-event-empty">
+  <section class="event-block">
+    <div class="event-body">No renderable events in this step.</div>
+  </section>
+</template>
+<template id="tpl-event-message">
+  <section class="event-block message">
+    <div class="event-heading"><span class="event-label">message</span></div>
+    <div class="event-body" data-slot="body"></div>
+  </section>
+</template>
+<template id="tpl-event-reasoning">
+  <section class="event-block reasoning">
+    <div class="event-heading"><span class="event-label">◆ reasoning</span></div>
+    <div class="event-body" data-slot="body"></div>
+  </section>
+</template>
+<template id="tpl-event-tool-call">
+  <section class="event-block tool-call">
+    <div class="event-heading">
+      <span class="event-label">tool call</span>
+      <span class="event-ref" data-slot="ref" hidden></span>
+    </div>
+    <div class="event-summary-line">
+      <span class="symbol-tool">▶</span>
+      <span>tool:</span>
+      <span class="tool-name" data-slot="title"></span>
+      <span class="tool-paren">(…)</span>
+    </div>
+  </section>
+</template>
+<template id="tpl-event-tool-result">
+  <section class="event-block tool-result">
+    <div class="event-heading">
+      <span class="event-label">tool result</span>
+      <span class="event-ref" data-slot="ref" hidden></span>
+    </div>
+    <div class="event-summary-line">
+      <span class="symbol-result">◀</span>
+      <span>result</span>
+    </div>
+  </section>
+</template>
+<template id="tpl-event-metrics">
+  <div class="metrics-inline"></div>
+</template>
+<template id="tpl-json-detail">
+  <details class="json-detail">
+    <summary data-slot="summary"></summary>
+    <div data-slot="content"></div>
+  </details>
+</template>
+<template id="tpl-node-json">
+  <details class="node-json">
+    <summary data-slot="summary"></summary>
+    <div data-slot="content"></div>
+  </details>
+</template>
+<template id="tpl-sidebar-placeholder">
+  <section class="sidebar-panel">
+    <div class="sidebar-panel-head">
+      <div class="sidebar-eyebrow" data-slot="eyebrow"></div>
+      <h2 class="sidebar-title" data-slot="title"></h2>
+      <p class="sidebar-copy" data-slot="copy" hidden></p>
+    </div>
+  </section>
+</template>
+<template id="tpl-analytics-panel">
+  <section class="sidebar-panel analytics-panel">
+    <div class="sidebar-panel-head">
+      <div class="sidebar-eyebrow">Analytics</div>
+      <h2 class="sidebar-title">Conversation metrics</h2>
+      <div class="analytics-subtitle" data-slot="subtitle"></div>
+    </div>
+    <div class="analytics-body">
+      <div class="analytics-summary" data-slot="summary"></div>
+      <div class="analytics-sections" data-slot="sections"></div>
+    </div>
+  </section>
+</template>
+<template id="tpl-analytics-summary-row">
+  <div class="analytics-summary-row">
+    <div class="analytics-summary-main">
+      <div class="analytics-summary-label" data-slot="label"></div>
+      <div class="analytics-summary-meta" data-slot="meta" hidden></div>
+    </div>
+    <div class="analytics-summary-value" data-slot="value"></div>
+  </div>
+</template>
+<template id="tpl-analytics-section">
+  <section class="analytics-section">
+    <h3 data-slot="title"></h3>
+    <div class="analytics-list" data-slot="list"></div>
+  </section>
+</template>
+<template id="tpl-analytics-row">
+  <div class="analytics-row">
+    <div class="analytics-row-main">
+      <div class="analytics-row-label">
+        <strong data-slot="primary"></strong>
+        <span data-slot="secondary"></span>
+      </div>
+      <div class="analytics-bar" data-slot="bar" hidden>
+        <div class="analytics-bar-fill" data-slot="bar-fill"></div>
+      </div>
+    </div>
+    <div class="analytics-row-value" data-slot="value"></div>
+  </div>
+</template>
+<template id="tpl-analytics-empty">
+  <div class="analytics-empty" data-slot="message"></div>
+</template>
+<template id="tpl-analytics-loop-row">
+  <div class="analytics-loop-row">
+    <div class="analytics-loop-main">
+      <span class="cat-dot" data-slot="cat-dot"></span>
+      <a class="analytics-loop-range" data-slot="range"></a>
+      <span class="analytics-loop-cat" data-slot="category"></span>
+    </div>
+    <div class="analytics-loop-end">
+      <span class="analytics-loop-len" data-slot="length"></span>
+      <span class="analytics-badge" data-slot="badge"></span>
+    </div>
+  </div>
+</template>
+<script>
+/* Data injected by Python — do not edit the constants below by hand. */
+const INITIAL_EVENTS = [];
+const INITIAL_RAW_DOC = null;
+
 (function () {
   'use strict';
 
@@ -74,153 +1481,6 @@
   const ATTACHMENT_RE = /<attachment\b[^>]*>[\s\S]*?<\/attachment>/gi;
   const USER_REQUEST_RE = /<userRequest>\s*([\s\S]*?)\s*<\/userRequest>/gi;
   const PREVIEW_LIMIT = 220;
-  const ANSI_ESCAPE_RE = /\u001b\[[0-?]*[ -/]*[@-~]/g;
-  const ANSI_OSC_RE = /\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g;
-
-  var TOOL_LABELS = {
-    apply_patch: 'Apply Patch',
-    configure_python_environment: 'Configure Python Environment',
-    create_and_run_task: 'Create & Run Task',
-    create_directory: 'Create Directory',
-    create_file: 'Create File',
-    edit_notebook_file: 'Edit Notebook',
-    fetch_webpage: 'Fetch Webpage',
-    file_search: 'Find Files',
-    get_errors: 'Check Errors',
-    get_python_environment_details: 'Inspect Python Environment',
-    get_python_executable_details: 'Get Python Executable',
-    grep_search: 'Search Text',
-    install_python_packages: 'Install Python Packages',
-    list_dir: 'List Directory',
-    manage_todo_list: 'Update Todo List',
-    open_browser_page: 'Open Browser Page',
-    read_file: 'Read File',
-    read_notebook_cell_output: 'Read Notebook Output',
-    run_in_terminal: 'Run in Terminal',
-    run_notebook_cell: 'Run Notebook Cell',
-    run_task: 'Run Task',
-    runSubagent: 'Run Subagent',
-    search_subagent: 'Search Codebase',
-    semantic_search: 'Semantic Search'
-  };
-
-  function isPlainObject(value) {
-    return value != null && typeof value === 'object' && !Array.isArray(value);
-  }
-
-  function humanizeIdentifier(value) {
-    return String(value == null ? '' : value)
-      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-      .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/\b\w/g, function (match) { return match.toUpperCase(); });
-  }
-
-  function toolDisplayName(name) {
-    var raw = String(name || '').trim();
-    return TOOL_LABELS[raw] || humanizeIdentifier(raw || 'tool');
-  }
-
-  function displayToolPattern(pattern) {
-    return String(pattern || '')
-      .split(' → ')
-      .map(function (name) { return toolDisplayName(name); })
-      .join(' → ');
-  }
-
-  function firstNonEmptyString(obj, keys) {
-    if (!isPlainObject(obj)) return '';
-    for (var i = 0; i < keys.length; i += 1) {
-      var value = obj[keys[i]];
-      if (value == null) continue;
-      if (typeof value === 'string' && value.trim()) return value;
-      if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-    }
-    return '';
-  }
-
-  function dedupeStrings(values) {
-    var seen = {};
-    var items = [];
-    (values || []).forEach(function (value) {
-      var text = String(value == null ? '' : value).trim();
-      if (!text || seen[text]) return;
-      seen[text] = true;
-      items.push(text);
-    });
-    return items;
-  }
-
-  function stripAnsi(value) {
-    return String(value == null ? '' : value)
-      .replace(ANSI_OSC_RE, '')
-      .replace(ANSI_ESCAPE_RE, '');
-  }
-
-  function decodeDisplayEscapes(value) {
-    var text = String(value == null ? '' : value);
-    var sentinel = '\u0000';
-    return text
-      .replace(/\\\\/g, sentinel)
-      .replace(/\\"/g, '"')
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '\r')
-      .replace(/\\t/g, '\t')
-      .replace(/\\\//g, '/')
-      .replace(new RegExp(sentinel, 'g'), '\\');
-  }
-
-  function cleanDisplayText(value) {
-    var text = typeof value === 'string' ? value : stringify(value);
-    return decodeDisplayEscapes(stripAnsi(text))
-      .replace(/\r\n/g, '\n')
-      .replace(/\r/g, '\n');
-  }
-
-  function cleanInlineText(value, limit) {
-    var text = cleanDisplayText(value).replace(/\s+/g, ' ').trim();
-    if (limit && text.length > limit) return text.slice(0, limit - 1) + '…';
-    return text;
-  }
-
-  function formatQuotedText(value, limit) {
-    var text = cleanInlineText(value, limit || 120);
-    return text ? '“' + text + '”' : '';
-  }
-
-  function stringifyJsonDetail(value) {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch (_err) {
-      return stringify(value);
-    }
-  }
-
-  function maybeParseJsonLike(value) {
-    if (typeof value !== 'string') return value;
-    var trimmed = value.trim();
-    if (!trimmed || !/^[\[{]/.test(trimmed)) return value;
-    try {
-      return JSON.parse(trimmed);
-    } catch (_err) {
-      return value;
-    }
-  }
-
-  function inferLanguageFromPath(path) {
-    var value = String(path || '').toLowerCase();
-    if (!value) return null;
-    if (/\.(py|pyw)$/i.test(value)) return 'language-python';
-    if (/\.(sh|bash|zsh)$/i.test(value)) return 'language-bash';
-    if (/\.(js|mjs|cjs)$/i.test(value)) return 'language-javascript';
-    if (/\.(ts|tsx)$/i.test(value)) return 'language-typescript';
-    if (/\.(json|jsonl|atif)$/i.test(value)) return 'language-json';
-    if (/\.(html|j2)$/i.test(value)) return 'language-html';
-    if (/\.(css|scss)$/i.test(value)) return 'language-css';
-    if (/\.(md|markdown)$/i.test(value)) return 'language-markdown';
-    return null;
-  }
 
   function stringify(value) {
     if (typeof value === 'string') return value;
@@ -712,7 +1972,7 @@
       }
     }
     for (const ev of events) {
-      if (ev.kind === 'tool_call') return 'tool: ' + toolDisplayName(ev.title || '?') + '(…)';
+      if (ev.kind === 'tool_call') return 'tool: ' + (ev.title || '?') + '(…)';
     }
     return '';
   }
@@ -743,405 +2003,23 @@
   }
 
   function createJsonDetailNodes(summary, value) {
-    const full = stringifyJsonDetail(value);
+    const full = stringify(value);
+    const needsExpand = full.length > PREVIEW_LIMIT || /\n/.test(full) || typeof value !== 'string';
     const nodes = [];
     if (!full) return nodes;
+
+    const snippet = document.createElement('div');
+    snippet.className = 'event-snippet';
+    snippet.textContent = "";
+    nodes.push(snippet);
+
+    if (!needsExpand) return nodes;
+
     const detail = cloneTemplate('tpl-json-detail');
     setSlotText(detail, 'summary', summary);
-    slot(detail, 'content').appendChild(createCodeBlock(full, 'language-json'));
+    slot(detail, 'content').appendChild(createCodeBlock(full, codeLanguageClass(value)));
     nodes.push(detail);
     return nodes;
-  }
-
-  function setOptionalText(root, name, value) {
-    var node = slot(root, name);
-    if (!node) return null;
-    var text = String(value == null ? '' : value).trim();
-    node.hidden = !text;
-    node.textContent = text;
-    return node;
-  }
-
-  function createMetaChip(text) {
-    var chip = document.createElement('span');
-    chip.className = 'tool-chip';
-    chip.textContent = text;
-    return chip;
-  }
-
-  function renderMetaChips(container, items) {
-    if (!container) return;
-    clearNode(container);
-    var values = dedupeStrings(items);
-    container.hidden = !values.length;
-    values.forEach(function (item) {
-      container.appendChild(createMetaChip(item));
-    });
-  }
-
-  function createToolPanel(label, child, tone) {
-    var panel = document.createElement('section');
-    panel.className = 'tool-panel' + (tone ? ' tone-' + tone : '');
-    var heading = document.createElement('div');
-    heading.className = 'tool-panel-label';
-    heading.textContent = label;
-    panel.appendChild(heading);
-    if (child) panel.appendChild(child);
-    return panel;
-  }
-
-  function extractCommandSource(args) {
-    if (!isPlainObject(args)) return '';
-    if (typeof args.command === 'string' && args.command.trim()) return args.command;
-    if (isPlainObject(args.task) && typeof args.task.command === 'string' && args.task.command.trim()) {
-      var taskCommand = args.task.command;
-      if (Array.isArray(args.task.args) && args.task.args.length) {
-        taskCommand += ' ' + args.task.args.join(' ');
-      }
-      return taskCommand;
-    }
-    return '';
-  }
-
-  function extractPythonScriptFromCommand(command) {
-    var trimmed = String(command || '').trim();
-    var hereDoc = trimmed.match(/^\s*(?:python|python\d(?:\.\d+)?|uv\s+run\s+python(?:\d(?:\.\d+)?)?)\b[\s\S]*?<<\s*['"]?([A-Za-z0-9_]+)['"]?\s*\n([\s\S]*?)\n\1\s*$/i);
-    if (hereDoc) return hereDoc[2];
-    var index = trimmed.search(/\s-c\s+/);
-    if (index === -1) return null;
-    var remainder = trimmed.slice(index).replace(/^\s-c\s+/, '');
-    var quote = remainder.charAt(0);
-    if (quote !== '"' && quote !== "'") return null;
-    var end = remainder.lastIndexOf(quote);
-    if (end <= 0) return null;
-    return remainder.slice(1, end);
-  }
-
-  function buildCommandPreview(command) {
-    if (!command || !String(command).trim()) return null;
-    var pythonScript = extractPythonScriptFromCommand(command);
-    if (pythonScript) {
-      return {
-        label: 'Python command',
-        text: cleanDisplayText(pythonScript).replace(/^\n+|\n+$/g, ''),
-        languageClass: 'language-python'
-      };
-    }
-    return {
-      label: 'Shell command',
-      text: cleanDisplayText(command).replace(/^\n+|\n+$/g, ''),
-      languageClass: 'language-bash'
-    };
-  }
-
-  function inferToolPrimary(name, args) {
-    switch (String(name || '')) {
-      case 'run_in_terminal':
-        return 'Execute command in terminal';
-      case 'run_task':
-        return args.id ? 'Run task ' + cleanInlineText(args.id, 72) : 'Run workspace task';
-      case 'read_file':
-        return args.filePath ? 'Read ' + cleanDisplayText(args.filePath) : 'Read file';
-      case 'grep_search':
-        return args.query ? 'Search text for ' + formatQuotedText(args.query, 120) : 'Search text';
-      case 'file_search':
-        return args.query ? 'Find files matching ' + formatQuotedText(args.query, 120) : 'Find files';
-      case 'fetch_webpage':
-        if (Array.isArray(args.urls) && args.urls.length) {
-          return args.urls.length === 1 ? 'Fetch ' + cleanInlineText(args.urls[0], 140) : 'Fetch ' + args.urls.length + ' webpages';
-        }
-        return args.url ? 'Fetch ' + cleanInlineText(args.url, 140) : 'Fetch webpage';
-      case 'create_file':
-        return args.filePath ? 'Create ' + cleanDisplayText(args.filePath) : 'Create file';
-      case 'create_directory':
-        return args.dirPath ? 'Create ' + cleanDisplayText(args.dirPath) : 'Create directory';
-      case 'list_dir':
-        return args.path ? 'List ' + cleanDisplayText(args.path) : 'List directory';
-      case 'search_subagent':
-        return args.query ? 'Search codebase for ' + formatQuotedText(args.query, 120) : 'Search codebase';
-      case 'runSubagent':
-        return args.description ? cleanInlineText(args.description, 120) : 'Run subagent';
-      case 'open_browser_page':
-        return args.url ? 'Open ' + cleanInlineText(args.url, 140) : 'Open browser page';
-      case 'apply_patch':
-        return 'Apply patch';
-      case 'get_errors':
-        return 'Check errors';
-      default: {
-        var pathLike = firstNonEmptyString(args, ['filePath', 'dirPath', 'path', 'uri']);
-        if (pathLike) return cleanDisplayText(pathLike);
-        var queryLike = firstNonEmptyString(args, ['query', 'url']);
-        if (queryLike) return cleanInlineText(queryLike, 140);
-        return '';
-      }
-    }
-  }
-
-  function inferToolSecondary(name, args) {
-    switch (String(name || '')) {
-      case 'read_file': {
-        var start = args.startLine != null ? String(args.startLine) : '?';
-        var end = args.endLine != null ? String(args.endLine) : '?';
-        if (args.startLine != null || args.endLine != null) return 'Lines ' + start + '–' + end;
-        return '';
-      }
-      case 'grep_search':
-        return args.includePattern ? 'Scope: ' + cleanInlineText(args.includePattern, 120) : '';
-      case 'file_search':
-        return args.maxResults != null ? 'Max results: ' + String(args.maxResults) : '';
-      case 'fetch_webpage':
-        return args.query ? cleanInlineText(args.query, 180) : '';
-      case 'run_task':
-        return args.workspaceFolder ? cleanInlineText(args.workspaceFolder, 160) : '';
-      case 'runSubagent':
-        return args.agentName ? 'Agent: ' + cleanInlineText(args.agentName, 72) : '';
-      default:
-        return '';
-    }
-  }
-
-  function inferToolMeta(name, args) {
-    var items = [];
-    if (!isPlainObject(args)) return items;
-    if (name === 'run_in_terminal' && args.isBackground === true) items.push('background');
-    if (name === 'run_in_terminal' && args.isBackground === false) items.push('foreground');
-    if (args.timeout != null && Number.isFinite(Number(args.timeout))) items.push('timeout ' + formatDuration(Number(args.timeout)));
-    if (Array.isArray(args.urls) && args.urls.length > 1) items.push(args.urls.length + ' URLs');
-    if (Array.isArray(args.filePaths) && args.filePaths.length) items.push(args.filePaths.length + ' paths');
-    if (args.port != null) items.push('port ' + String(args.port));
-    if (args.maxResults != null) items.push('max ' + String(args.maxResults));
-    if (isPlainObject(args.task) && args.task.label) items.push('task ' + cleanInlineText(args.task.label, 80));
-    if (name === 'read_file' && (args.startLine != null || args.endLine != null)) {
-      items.push('L' + (args.startLine != null ? args.startLine : '?') + '–' + (args.endLine != null ? args.endLine : '?'));
-    }
-    return dedupeStrings(items);
-  }
-
-  function buildToolCallDisplay(ev) {
-    var args = isPlainObject(ev.body) ? ev.body : {};
-    var explanation = cleanInlineText(firstNonEmptyString(args, ['explanation', 'explaination']), 220);
-    var goal = cleanInlineText(firstNonEmptyString(args, ['goal']), 220);
-    var primary = explanation || inferToolPrimary(ev.title, args);
-    var secondary = goal ? 'Goal: ' + goal : inferToolSecondary(ev.title, args);
-    return {
-      name: toolDisplayName(ev.title),
-      primary: primary,
-      secondary: secondary,
-      meta: inferToolMeta(ev.title, args),
-      commandPreview: buildCommandPreview(extractCommandSource(args))
-    };
-  }
-
-  function isShellPromptLine(line) {
-    return /^(?:\([^)]+\)\s*)?(?:[A-Za-z0-9._~\/-]+\s*)?[$#]\s/.test(line) || /^>\s/.test(line);
-  }
-
-  function looksTerminalTranscript(text) {
-    return String(text || '').split('\n').some(isShellPromptLine);
-  }
-
-  function splitTerminalTranscript(text) {
-    var lines = String(text || '').split('\n');
-    var commandLines = [];
-    var outputLines = [];
-    var sawPrompt = false;
-    var commandPhase = true;
-
-    lines.forEach(function (line) {
-      if (commandPhase && isShellPromptLine(line)) {
-        sawPrompt = true;
-        commandLines.push(line);
-        return;
-      }
-      if (commandPhase && sawPrompt && !line.trim()) return;
-      commandPhase = false;
-      if (outputLines.length && isShellPromptLine(line)) return;
-      outputLines.push(line);
-    });
-
-    var command = commandLines.join('\n').replace(/^\n+|\n+$/g, '');
-    var output = outputLines.join('\n').replace(/^\n+|\n+$/g, '');
-    if (!sawPrompt || !command || !output) return null;
-    return { command: command, output: output };
-  }
-
-  function classifyTextTone(text, fallbackTone) {
-    var exitCode = _parseExitCode(text);
-    if (exitCode === 0) return 'stdout';
-    if (exitCode != null && exitCode !== 0) return 'stderr';
-    if (_looksLikeError(text)) return 'stderr';
-    if (looksTerminalTranscript(text)) return 'log';
-    return fallbackTone || 'neutral';
-  }
-
-  function inferResultLanguageClass(callEv, key, text) {
-    if (key === 'content' && callEv && isPlainObject(callEv.body)) {
-      var path = callEv.body.filePath || callEv.body.path || callEv.body.uri;
-      var pathLanguage = inferLanguageFromPath(path);
-      if (pathLanguage) return pathLanguage;
-    }
-    if (/^\s*</.test(String(text || '')) && /<\/?[a-z]/i.test(String(text || ''))) return 'language-html';
-    return 'language-plaintext';
-  }
-
-  function resultLabelForKey(key, callEv) {
-    if (key === 'content' && callEv && callEv.title === 'read_file') return 'File contents';
-    if (key === 'output') return 'Output';
-    if (key === 'stdout') return 'Stdout';
-    if (key === 'stderr') return 'Stderr';
-    if (key === 'error') return 'Error';
-    if (key === 'message') return 'Message';
-    return humanizeIdentifier(key || 'result');
-  }
-
-  function buildTextSectionsFromValue(key, value, callEv) {
-    var cleaned = cleanDisplayText(value).replace(/^\n+|\n+$/g, '');
-    if (!cleaned) return [];
-    var fallbackTone = (key === 'stderr' || key === 'error') ? 'stderr' : 'stdout';
-    var transcript = (callEv && (callEv.title === 'run_in_terminal' || callEv.title === 'run_task')) ? splitTerminalTranscript(cleaned) : null;
-    if (transcript) {
-      return [
-        { label: 'Command transcript', kind: 'code', text: transcript.command, tone: 'log', languageClass: 'language-bash' },
-        { label: fallbackTone === 'stderr' ? 'Stderr' : 'Output', kind: 'code', text: transcript.output, tone: classifyTextTone(transcript.output, fallbackTone), languageClass: 'language-plaintext' }
-      ];
-    }
-    return [{
-      label: resultLabelForKey(key, callEv),
-      kind: 'code',
-      text: cleaned,
-      tone: classifyTextTone(cleaned, fallbackTone),
-      languageClass: inferResultLanguageClass(callEv, key, cleaned)
-    }];
-  }
-
-  function buildToolResultDisplay(ev, callEv) {
-    var parsed = maybeParseJsonLike(ev.body);
-    var sections = [];
-    var meta = [];
-
-    if (isPlainObject(parsed)) {
-      var remaining = {};
-      Object.keys(parsed).forEach(function (key) { remaining[key] = parsed[key]; });
-
-      if (remaining.exit_code != null) {
-        meta.push('exit ' + String(remaining.exit_code));
-        delete remaining.exit_code;
-      }
-      if (remaining.exitCode != null) {
-        meta.push('exit ' + String(remaining.exitCode));
-        delete remaining.exitCode;
-      }
-      if (remaining.truncated === true) {
-        meta.push('truncated');
-        delete remaining.truncated;
-      }
-      if (remaining.duration_ms != null && Number.isFinite(Number(remaining.duration_ms))) {
-        meta.push(formatDuration(Number(remaining.duration_ms)));
-        delete remaining.duration_ms;
-      }
-
-      ['stdout', 'stderr', 'output', 'content', 'message', 'error'].forEach(function (key) {
-        if (!Object.prototype.hasOwnProperty.call(remaining, key)) return;
-        var value = remaining[key];
-        delete remaining[key];
-        if (typeof value === 'string') {
-          buildTextSectionsFromValue(key, value, callEv).forEach(function (section) { sections.push(section); });
-          return;
-        }
-        if (value != null) {
-          sections.push({ label: resultLabelForKey(key, callEv), kind: 'json', value: value, tone: key === 'error' ? 'stderr' : 'neutral' });
-        }
-      });
-
-      if (Array.isArray(remaining.results)) {
-        sections.push({ label: 'Results', kind: 'json', value: remaining.results, tone: 'neutral' });
-        delete remaining.results;
-      }
-
-      if (!sections.length || Object.keys(remaining).length) {
-        var payload = sections.length ? remaining : parsed;
-        if (!isPlainObject(payload) || Object.keys(payload).length) {
-          sections.push({ label: sections.length ? 'Structured data' : 'Result data', kind: 'json', value: payload, tone: 'neutral' });
-        }
-      }
-    } else if (Array.isArray(parsed)) {
-      sections.push({ label: 'Results', kind: 'json', value: parsed, tone: 'neutral' });
-    } else {
-      sections = buildTextSectionsFromValue('output', parsed == null ? '' : String(parsed), callEv);
-    }
-
-    if (!sections.length) {
-      sections.push({ label: 'Result', kind: 'code', text: '(empty result)', tone: 'neutral', languageClass: 'language-plaintext' });
-    }
-
-    return {
-      title: callEv ? toolDisplayName(callEv.title) + ' result' : 'Result',
-      meta: dedupeStrings(meta),
-      sections: sections
-    };
-  }
-
-  function createToolSectionNode(section) {
-    if (section.kind === 'json') {
-      return createToolPanel(section.label, createCodeBlock(stringifyJsonDetail(section.value), 'language-json'), section.tone || 'neutral');
-    }
-    return createToolPanel(section.label, createCodeBlock(section.text || '', section.languageClass || 'language-plaintext'), section.tone || 'neutral');
-  }
-
-  function applyToolCategoryTag(node, toolName) {
-    var cat = categorizeTool(toolName);
-    var color = CATEGORY_COLORS[cat] || '#71717a';
-    var catTag = document.createElement('span');
-    catTag.className = 'tool-cat-tag';
-    catTag.textContent = CATEGORY_LABELS[cat] || cat;
-    catTag.style.setProperty('--tag-color', color);
-    var headingLine = node.querySelector('.event-summary-line');
-    if (headingLine) headingLine.appendChild(catTag);
-  }
-
-  function decorateToolCallNode(node, ev) {
-    var ref = slot(node, 'ref');
-    if (ev.ref) {
-      ref.hidden = false;
-      ref.textContent = '#' + ev.ref;
-    }
-    var display = buildToolCallDisplay(ev);
-    setSlotText(node, 'title', display.name);
-    setOptionalText(node, 'primary', display.primary);
-    setOptionalText(node, 'secondary', display.secondary);
-    renderMetaChips(slot(node, 'meta'), display.meta);
-    applyToolCategoryTag(node, ev.title);
-
-    var content = slot(node, 'content');
-    if (content) {
-      clearNode(content);
-      if (display.commandPreview && display.commandPreview.text) {
-        content.appendChild(createToolPanel(display.commandPreview.label, createCodeBlock(display.commandPreview.text, display.commandPreview.languageClass), 'neutral'));
-      }
-      appendNodes(content, createJsonDetailNodes('Raw arguments JSON', ev.body));
-    }
-    return node;
-  }
-
-  function decorateToolResultNode(node, ev, callEv) {
-    var ref = slot(node, 'ref');
-    if (ev.ref) {
-      ref.hidden = false;
-      ref.textContent = '#' + ev.ref;
-    }
-    var display = buildToolResultDisplay(ev, callEv || null);
-    setSlotText(node, 'title', display.title);
-    renderMetaChips(slot(node, 'meta'), display.meta);
-
-    var content = slot(node, 'content');
-    if (content) {
-      clearNode(content);
-      display.sections.forEach(function (section) {
-        content.appendChild(createToolSectionNode(section));
-      });
-      appendNodes(content, createJsonDetailNodes('Raw result JSON', ev.body));
-    }
-    return node;
   }
 
   function renderMessageEvent(ev) {
@@ -1160,11 +2038,26 @@
   }
 
   function renderToolCallEvent(ev) {
-    return decorateToolCallNode(cloneTemplate('tpl-event-tool-call'), ev);
+    const node = cloneTemplate('tpl-event-tool-call');
+    const ref = slot(node, 'ref');
+    if (ev.ref) {
+      ref.hidden = false;
+      ref.textContent = '#' + ev.ref;
+    }
+    setSlotText(node, 'title', ev.title || '?');
+    appendNodes(node, createJsonDetailNodes('Expand tool arguments', ev.body));
+    return node;
   }
 
   function renderToolResultEvent(ev) {
-    return decorateToolResultNode(cloneTemplate('tpl-event-tool-result'), ev, null);
+    const node = cloneTemplate('tpl-event-tool-result');
+    const ref = slot(node, 'ref');
+    if (ev.ref) {
+      ref.hidden = false;
+      ref.textContent = '#' + ev.ref;
+    }
+    appendNodes(node, createJsonDetailNodes('Expand full result', ev.body));
+    return node;
   }
 
   function renderMetricsEvent(ev) {
@@ -1655,7 +2548,7 @@
 
     const toolItems = analytics.topTools.length
       ? analytics.topTools.slice(0, 8).map(function (tool) {
-          return createAnalyticsRow(toolDisplayName(tool.name), 'tool calls', formatCount(tool.count));
+          return createAnalyticsRow(tool.name, 'tool calls', formatCount(tool.count));
         })
       : [createAnalyticsEmpty('No tool calls in the current view.')];
 
@@ -1725,7 +2618,7 @@
     // Error detection section
     var errorItems = analytics.errorDetection.length
       ? analytics.errorDetection.map(function (err) {
-          var text = toolDisplayName(err.toolName) + ' × ' + err.repetitions;
+          var text = err.toolName + ' × ' + err.repetitions;
           var meta = 'steps ' + err.startStepId + '–' + err.endStepId + ' (' + (CATEGORY_LABELS[err.category] || err.category) + ')';
           var row = createAnalyticsRow(text, meta, '⚠');
           row.style.cursor = 'pointer';
@@ -1739,7 +2632,7 @@
     // Tool sequences section
     var seqItems = analytics.toolSequences.length
       ? analytics.toolSequences.map(function (seq) {
-          var row = createAnalyticsRow(displayToolPattern(seq.pattern), CATEGORY_LABELS[seq.dominantCategory] || seq.dominantCategory, '×' + seq.count);
+          var row = createAnalyticsRow(seq.pattern, CATEGORY_LABELS[seq.dominantCategory] || seq.dominantCategory, '×' + seq.count);
           var primaryEl = row.querySelector('.analytics-row-label strong');
           if (primaryEl) primaryEl.style.fontSize = '10px';
           return row;
@@ -1813,14 +2706,30 @@
   function renderToolCallPaired(callEv, resultEv) {
     var group = document.createElement('div');
     group.className = 'tool-pair';
+    var cat = categorizeTool(callEv.title);
+    var color = CATEGORY_COLORS[cat] || '#71717a';
 
     // Tool call section
-    var callNode = decorateToolCallNode(cloneTemplate('tpl-event-tool-call'), callEv);
+    var callNode = cloneTemplate('tpl-event-tool-call');
+    var ref = slot(callNode, 'ref');
+    if (callEv.ref) { ref.hidden = false; ref.textContent = '#' + callEv.ref; }
+    setSlotText(callNode, 'title', callEv.title || '?');
+    // Add category tag
+    var catTag = document.createElement('span');
+    catTag.className = 'tool-cat-tag';
+    catTag.textContent = CATEGORY_LABELS[cat] || cat;
+    catTag.style.setProperty('--tag-color', color);
+    var headingLine = callNode.querySelector('.event-summary-line');
+    if (headingLine) headingLine.appendChild(catTag);
+    appendNodes(callNode, createJsonDetailNodes('Expand tool arguments', callEv.body));
     group.appendChild(callNode);
 
     // Tool result section (or missing indicator)
     if (resultEv) {
-      var resultNode = decorateToolResultNode(cloneTemplate('tpl-event-tool-result'), resultEv, callEv);
+      var resultNode = cloneTemplate('tpl-event-tool-result');
+      var rref = slot(resultNode, 'ref');
+      if (resultEv.ref) { rref.hidden = false; rref.textContent = '#' + resultEv.ref; }
+      appendNodes(resultNode, createJsonDetailNodes('Expand full results', resultEv.body));
       group.appendChild(resultNode);
     } else {
       var missing = document.createElement('div');
@@ -2334,3 +3243,7 @@
     focusHashTarget(false);
   }
 }());
+
+</script>
+</body>
+</html>

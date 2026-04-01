@@ -116,10 +116,12 @@
     </div>
     <div class="event-summary-line">
       <span class="symbol-tool">▶</span>
-      <span>tool:</span>
       <span class="tool-name" data-slot="title"></span>
-      <span class="tool-paren">(…)</span>
     </div>
+    <div class="tool-primary-text" data-slot="primary" hidden></div>
+    <div class="tool-secondary-text" data-slot="secondary" hidden></div>
+    <div class="tool-meta-list" data-slot="meta" hidden></div>
+    <div class="tool-rich-content" data-slot="content"></div>
   </section>
 </template>
 <template id="tpl-event-tool-result">
@@ -130,8 +132,10 @@
     </div>
     <div class="event-summary-line">
       <span class="symbol-result">◀</span>
-      <span>result</span>
+      <span class="tool-result-title" data-slot="title">Result</span>
     </div>
+    <div class="tool-meta-list" data-slot="meta" hidden></div>
+    <div class="tool-rich-content" data-slot="content"></div>
   </section>
 </template>
 <template id="tpl-event-metrics">

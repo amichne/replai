@@ -429,12 +429,128 @@ header {
 
 .symbol-tool,
 .symbol-result,
-.tool-name {
+.tool-name,
+.tool-result-title {
   color: var(--text);
 }
 
-.tool-name { font-weight: 700; }
+.tool-name,
+.tool-result-title { font-weight: 700; }
 .tool-paren { color: var(--text-faint); }
+
+.tool-primary-text {
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.tool-secondary-text {
+  margin-top: 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.tool-meta-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.tool-rich-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.tool-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.tool-panel-label {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: #fbfbfb;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tool-panel .code-block {
+  margin-top: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.tool-panel .code-syntax,
+.tool-panel .hljs {
+  padding-top: 10px;
+}
+
+.tool-panel.tone-stdout {
+  border-color: #ccebd5;
+  background: #f4fbf6;
+}
+
+.tool-panel.tone-stdout .tool-panel-label {
+  background: #edf9f0;
+  color: #166534;
+  border-bottom-color: #d6f0dc;
+}
+
+.tool-panel.tone-stderr {
+  border-color: #f6caca;
+  background: #fff6f6;
+}
+
+.tool-panel.tone-stderr .tool-panel-label {
+  background: #fef1f1;
+  color: #b91c1c;
+  border-bottom-color: #f5d4d4;
+}
+
+.tool-panel.tone-log {
+  border-color: #e7e7eb;
+  background: #fafafa;
+}
+
+.tool-panel.tone-log .tool-panel-label {
+  background: #f4f4f5;
+}
+
+.tool-panel.tone-neutral .tool-panel-label {
+  background: #fbfbfb;
+}
+
+.tool-rich-content .json-detail {
+  margin-top: 0;
+}
 
 .event-snippet {
   color: var(--text-soft);
