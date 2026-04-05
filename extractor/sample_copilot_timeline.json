@@ -1,0 +1,16 @@
+{
+  "session_id": "sess-1",
+  "timeline": [
+    {"type": "session_start", "session_id": "sess-1", "ts": "2026-04-04T22:55:00Z", "meta": {"user": "amichne"}},
+    {"type": "message", "role": "user", "content": "Where are your debug logs located?", "ts": "2026-04-04T22:55:10Z"},
+    {"type": "message", "role": "assistant", "content": "Fetching Copilot CLI docs to find where debug logs are written.", "ts": "2026-04-04T22:55:20Z"},
+    {"type": "tool_call", "tool": "report_intent", "args": {"intent": "Fetching documentation"}, "ts": "2026-04-04T22:55:21Z"},
+    {"type": "message", "role": "assistant", "content": "Default logs live in your Copilot home directory: ~/.copilot (e.g., config.json, mcp-config.json and a logs folder). COPILOT_HOME can override that path.", "ts": "2026-04-04T22:55:50Z"},
+    {"type": "message", "role": "user", "content": "How can I best access the most robust, structured, and \"correct\" source of truth content regarding a conversation, it's token input/output and thinking tokens, as well as the tool calling content, responses, etc", "ts": "2026-04-04T23:00:39Z"},
+    {"type": "message", "role": "assistant", "content": "Short answer: use the on-disk session artifacts plus the CLI session/export and usage/context commands.", "ts": "2026-04-04T23:02:09Z"},
+    {"type": "message", "role": "user", "content": "If I wanted to build a UI using the content from the logs, which logs ought I pull, and how should I do so given the axis I've outlined caring about", "ts": "2026-04-04T23:13:16Z"},
+    {"type": "message", "role": "assistant", "content": "Pull these logs (in priority order) and normalize them into a single event stream: Session/timeline JSON, Event/audit NDJSON, Token/usage reports, Debug/reasoning traces, Config & metadata.", "ts": "2026-04-04T23:13:40Z"},
+    {"type": "message", "role": "user", "content": "Please create the python extractor, making certain to test it against this conversation to ensure functionality prior to completion", "ts": "2026-04-05T00:02:09Z"},
+    {"type": "message", "role": "assistant", "content": "Creating extractor and test artifacts under scripts/ to parse Copilot CLI NDJSON/JSON logs into a canonical event stream.", "ts": "2026-04-05T00:02:09Z"}
+  ]
+}
